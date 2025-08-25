@@ -10,24 +10,47 @@ const authRoutes = ['/login', '/register', '/forgot-password', '/reset-password'
 export function middleware(request: NextRequest) {
   const { pathname } = request.nextUrl;
   
-  // Récupérer le token depuis les cookies ou localStorage (côté client)
+  // Skip middleware pour les ressources statiques et API
+  if (pathname.startsWith('/_next/') || 
+      pathname.startsWith('/api/') || 
+      pathname.includes('.')) {
+    return NextResponse.next();
+  }
+  
+  // Récupérer le token depuis les cookies
   const authTokens = request.cookies.get('auth-storage');
   
   // Vérifier si l'utilisateur est authentifié
   let isAuthenticated = false;
+  let hasValidTokens = false;
+  
   if (authTokens) {
     try {
       const authData = JSON.parse(authTokens.value);
-      isAuthenticated = authData.state?.isAuthenticated && authData.state?.accessToken;
+      isAuthenticated = authData.state?.isAuthenticated === true;
+      hasValidTokens = !!(authData.state?.accessToken && authData.state?.refreshToken);
+      
+      // Vérifier l'expiration du token si possible
+      if (hasValidTokens && authData.state?.accessToken) {
+        try {
+          const tokenPayload = JSON.parse(atob(authData.state.accessToken.split('.')[1]));
+          const isExpired = tokenPayload.exp * 1000 < Date.now();
+          // Si le token est expiré mais qu'on a un refresh token, considérer comme authentifié
+          isAuthenticated = isAuthenticated && (!isExpired || !!authData.state?.refreshToken);
+        } catch {
+          // Si on ne peut pas décoder le token, faire confiance au flag isAuthenticated
+        }
+      }
     } catch (error) {
-      // Token invalide
+      console.warn('Erreur lors du parsing des tokens:', error);
       isAuthenticated = false;
+      hasValidTokens = false;
     }
   }
 
   // Protéger les routes qui nécessitent une authentification
   if (protectedRoutes.some(route => pathname.startsWith(route))) {
-    if (!isAuthenticated) {
+    if (!isAuthenticated || !hasValidTokens) {
       const loginUrl = new URL('/login', request.url);
       loginUrl.searchParams.set('redirect', pathname);
       return NextResponse.redirect(loginUrl);
@@ -36,8 +59,9 @@ export function middleware(request: NextRequest) {
 
   // Rediriger les utilisateurs connectés depuis les pages d'auth
   if (authRoutes.some(route => pathname.startsWith(route))) {
-    if (isAuthenticated) {
-      return NextResponse.redirect(new URL('/dashboard', request.url));
+    if (isAuthenticated && hasValidTokens) {
+      const redirectTo = request.nextUrl.searchParams.get('redirect') || '/dashboard';
+      return NextResponse.redirect(new URL(redirectTo, request.url));
     }
   }
 

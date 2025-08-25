@@ -28,6 +28,7 @@ export default function ResetPasswordPage() {
 
   useEffect(() => {
     const tokenParam = searchParams.get('token');
+    console.log('Token from URL:', tokenParam);
     if (!tokenParam) {
       toast.error('Token invalide', {
         description: 'Le lien de réinitialisation est invalide ou a expiré.',
@@ -35,6 +36,7 @@ export default function ResetPasswordPage() {
       router.push('/forgot-password');
     } else {
       setToken(tokenParam);
+      console.log('Token set:', tokenParam);
     }
   }, [searchParams, router]);
 
@@ -49,19 +51,38 @@ export default function ResetPasswordPage() {
   const onSubmit = async (data: ResetPasswordFormData) => {
     if (!token) return;
     
+    console.log('Submitting reset with token:', token);
     setIsLoading(true);
     
     try {
-      await authService.resetPassword(token, data.password);
+      const response = await authService.resetPassword(token, data.password);
       setIsSuccess(true);
-      toast.success('Mot de passe réinitialisé !', {
-        description: 'Votre mot de passe a été mis à jour avec succès.',
+      toast.success('Mot de passe modifié !', {
+        description: response.message,
       });
+      
+      // Redirection automatique après 3 secondes
+      setTimeout(() => {
+        router.push('/login');
+      }, 3000);
+      
     } catch (error: any) {
-      const errorMessage = error.response?.data?.message || 'Erreur lors de la réinitialisation';
-      toast.error('Échec de la réinitialisation', {
-        description: errorMessage,
+      console.log('Reset password error details:', {
+        status: error.response?.status,
+        data: error.response?.data,
+        token: token
       });
+      
+      if (error.response?.status === 400) {
+        toast.error('Token invalide', {
+          description: 'Le token de réinitialisation est invalide ou expiré. Veuillez demander un nouveau lien.',
+        });
+      } else {
+        const errorMessage = error.response?.data?.message || 'Une erreur est survenue. Veuillez réessayer.';
+        toast.error('Erreur', {
+          description: errorMessage,
+        });
+      }
     } finally {
       setIsLoading(false);
     }
@@ -80,17 +101,22 @@ export default function ResetPasswordPage() {
             <div className="mx-auto w-12 h-12 bg-green-100 dark:bg-green-900/20 rounded-full flex items-center justify-center mb-4">
               <CheckCircle className="h-6 w-6 text-green-600 dark:text-green-400" />
             </div>
-            <CardTitle className="text-2xl font-bold">Succès !</CardTitle>
+            <CardTitle className="text-2xl font-bold">✅ Mot de passe modifié !</CardTitle>
             <CardDescription>
-              Votre mot de passe a été réinitialisé avec succès
+              Votre mot de passe a été modifié avec succès.
             </CardDescription>
           </CardHeader>
           <CardContent className="space-y-4">
+            <div className="rounded-lg bg-green-50 p-4 dark:bg-green-900/20">
+              <p className="text-sm text-green-800 dark:text-green-200">
+                🎉 Vous allez être redirigé vers la page de connexion dans quelques secondes...
+              </p>
+            </div>
             <Button
               onClick={() => router.push('/login')}
               className="w-full"
             >
-              Se connecter
+              Se connecter maintenant
             </Button>
           </CardContent>
         </Card>
@@ -124,7 +150,7 @@ export default function ResetPasswordPage() {
                 <Input
                   id="password"
                   type={showPassword ? 'text' : 'password'}
-                  placeholder="••••••••"
+                  placeholder="Au moins 8 caractères"
                   {...register('password')}
                   className={`pr-10 ${errors.password ? 'border-destructive' : ''}`}
                 />
@@ -136,6 +162,9 @@ export default function ResetPasswordPage() {
                   {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
                 </button>
               </div>
+              <p className="text-xs text-muted-foreground">
+                Minimum 8 caractères avec majuscule, minuscule et chiffre
+              </p>
               {errors.password && (
                 <p className="text-sm text-destructive">{errors.password.message}</p>
               )}
@@ -147,7 +176,7 @@ export default function ResetPasswordPage() {
                 <Input
                   id="confirmPassword"
                   type={showConfirmPassword ? 'text' : 'password'}
-                  placeholder="••••••••"
+                  placeholder="Répétez le mot de passe"
                   {...register('confirmPassword')}
                   className={`pr-10 ${errors.confirmPassword ? 'border-destructive' : ''}`}
                 />

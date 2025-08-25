@@ -39,6 +39,25 @@ api.interceptors.request.use(
   }
 );
 
+// Variable pour éviter les requêtes de refresh simultanées
+let isRefreshing = false;
+let failedQueue: Array<{
+  resolve: (value: any) => void;
+  reject: (reason: any) => void;
+}> = [];
+
+const processQueue = (error: any, token: string | null = null) => {
+  failedQueue.forEach(({ resolve, reject }) => {
+    if (error) {
+      reject(error);
+    } else {
+      resolve(token);
+    }
+  });
+  
+  failedQueue = [];
+};
+
 // Intercepteur pour gérer les erreurs et le refresh des tokens
 api.interceptors.response.use(
   (response: AxiosResponse) => {
@@ -48,39 +67,96 @@ api.interceptors.response.use(
     const originalRequest = error.config as typeof error.config & { _retry?: boolean };
     
     if (error.response?.status === 401 && originalRequest && !originalRequest._retry) {
+      if (isRefreshing) {
+        // Si on est déjà en train de rafraîchir, attendre
+        return new Promise((resolve, reject) => {
+          failedQueue.push({ resolve, reject });
+        }).then(token => {
+          if (originalRequest.headers) {
+            originalRequest.headers.Authorization = `Bearer ${token}`;
+          }
+          return api(originalRequest);
+        }).catch(err => {
+          return Promise.reject(err);
+        });
+      }
+      
       originalRequest._retry = true;
+      isRefreshing = true;
       
       try {
         const { refreshToken, setTokens, clearAuth } = useAuthStore.getState();
         
         if (!refreshToken) {
+          console.warn('Pas de refresh token disponible');
           clearAuth();
-          window.location.href = '/login';
+          processQueue(error, null);
+          if (typeof window !== 'undefined') {
+            window.location.href = '/login';
+          }
           return Promise.reject(error);
         }
         
-        // Tentative de refresh du token
-        const response = await axios.post(
+        console.log('Tentative de refresh du token...');
+        
+        // Utiliser une nouvelle instance axios pour éviter l'intercepteur
+        const refreshResponse = await axios.post(
           `${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3000/api'}/auth/refresh`,
-          { refreshToken }
+          { refreshToken },
+          {
+            headers: {
+              'Content-Type': 'application/json',
+            },
+          }
         );
         
-        const { accessToken: newAccessToken, refreshToken: newRefreshToken } = response.data.data;
+        console.log('Réponse refresh:', refreshResponse.data);
+        
+        // Gestion flexible de la structure de réponse
+        let newAccessToken: string;
+        let newRefreshToken: string;
+        
+        if (refreshResponse.data.data) {
+          // Structure avec wrapper
+          newAccessToken = refreshResponse.data.data.accessToken;
+          newRefreshToken = refreshResponse.data.data.refreshToken;
+        } else {
+          // Structure directe
+          newAccessToken = refreshResponse.data.accessToken;
+          newRefreshToken = refreshResponse.data.refreshToken;
+        }
+        
+        if (!newAccessToken) {
+          throw new Error('Access token manquant dans la réponse');
+        }
         
         // Mise à jour des tokens
         setTokens(newAccessToken, newRefreshToken);
+        useAuthStore.getState().setTokenRefreshed();
+        processQueue(null, newAccessToken);
         
         // Retry de la requête originale avec le nouveau token
         if (originalRequest.headers) {
           originalRequest.headers.Authorization = `Bearer ${newAccessToken}`;
         }
         
+        console.log('Token refreshé avec succès, retry de la requête originale');
         return api(originalRequest);
-      } catch (refreshError) {
+        
+      } catch (refreshError: any) {
+        console.error('Erreur lors du refresh:', refreshError);
+        processQueue(refreshError, null);
+        
         // Si le refresh échoue, déconnecter l'utilisateur
         useAuthStore.getState().clearAuth();
-        window.location.href = '/login';
+        
+        if (typeof window !== 'undefined') {
+          window.location.href = '/login';
+        }
+        
         return Promise.reject(refreshError);
+      } finally {
+        isRefreshing = false;
       }
     }
     
@@ -123,8 +199,44 @@ export interface AuthResponse {
   refreshToken: string;
 }
 
+// Nouveaux types pour le système 2FA
+export interface CredentialsValidationResponse {
+  sessionToken: string;
+  expiresIn: string;
+}
+
+export interface SessionData {
+  sessionToken: string;
+  email: string;
+  expiresAt: number;
+}
+
 // Services API
 export const authService = {
+  async registerWithAvatar(data: FormData): Promise<AuthResponse> {
+    try {
+      const response = await api.post<ApiResponse<AuthResponse>>('/auth/register-with-avatar', data, {
+        headers: {
+          'Content-Type': 'multipart/form-data',
+        },
+      });
+      console.log('Register with avatar response:', response.data);
+      
+      if (response.data.data) {
+        return response.data.data;
+      } else {
+        return response.data as unknown as AuthResponse;
+      }
+    } catch (error: any) {
+      console.error('Erreur dans registerWithAvatar:', error);
+      if (error.response) {
+        console.error('Statut:', error.response.status);
+        console.error('Data:', error.response.data);
+      }
+      throw error;
+    }
+  },
+
   async login(credentials: LoginCredentials): Promise<AuthResponse> {
     try {
       const response = await api.post<ApiResponse<AuthResponse>>('/auth/login', credentials);
@@ -140,6 +252,89 @@ export const authService = {
       console.error('Erreur login:', error);
       throw error;
     }
+  },
+
+  // Nouvelle méthode pour le système 2FA - Étape 1: Validation des identifiants
+  async validateCredentials(credentials: LoginCredentials): Promise<CredentialsValidationResponse> {
+    try {
+      const response = await api.post<ApiResponse<CredentialsValidationResponse>>('/auth/login-with-otp', credentials);
+      console.log('Credentials validation response:', response.data);
+      
+      if (response.data.data) {
+        // Stocker la session temporaire
+        const sessionData: SessionData = {
+          sessionToken: response.data.data.sessionToken,
+          email: credentials.email,
+          expiresAt: Date.now() + (10 * 60 * 1000) // Session 10 minutes (mais OTP expire en 4 min)
+        };
+        this.setSessionData(sessionData);
+        
+        return response.data.data;
+      } else {
+        return response.data as unknown as CredentialsValidationResponse;
+      }
+    } catch (error) {
+      console.error('Erreur validation credentials:', error);
+      throw error;
+    }
+  },
+
+  // Nouvelle méthode pour le système 2FA - Étape 2: Validation OTP et connexion
+  async verifyOtpAndLogin(email: string, otp: string, sessionToken: string): Promise<AuthResponse> {
+    try {
+      const response = await api.post<ApiResponse<AuthResponse>>('/auth/verify-otp-complete-login', {
+        email,
+        otp,
+        sessionToken
+      });
+      console.log('OTP verification and login response:', response.data);
+      
+      // Nettoyer la session temporaire après succès
+      this.clearSessionData();
+      
+      if (response.data.data) {
+        return response.data.data;
+      } else {
+        return response.data as unknown as AuthResponse;
+      }
+    } catch (error) {
+      console.error('Erreur vérification OTP et login:', error);
+      throw error;
+    }
+  },
+
+  // Gestion de la session temporaire
+  setSessionData(sessionData: SessionData): void {
+    if (typeof window !== 'undefined') {
+      sessionStorage.setItem('temp_session_data', JSON.stringify(sessionData));
+    }
+  },
+
+  getSessionData(): SessionData | null {
+    if (typeof window !== 'undefined') {
+      const data = sessionStorage.getItem('temp_session_data');
+      if (data) {
+        const sessionData: SessionData = JSON.parse(data);
+        // Vérifier si la session n'est pas expirée
+        if (sessionData.expiresAt > Date.now()) {
+          return sessionData;
+        } else {
+          this.clearSessionData();
+        }
+      }
+    }
+    return null;
+  },
+
+  clearSessionData(): void {
+    if (typeof window !== 'undefined') {
+      sessionStorage.removeItem('temp_session_data');
+    }
+  },
+
+  // Vérifier si une session temporaire est active
+  hasActiveSession(): boolean {
+    return this.getSessionData() !== null;
   },
 
   async register(data: RegisterData): Promise<AuthResponse> {
@@ -206,19 +401,72 @@ export const authService = {
     return response.data.data;
   },
 
-  async forgotPassword(email: string): Promise<void> {
-    await api.post('/auth/forgot-password', { email });
+  async forgotPassword(email: string): Promise<{ message: string }> {
+    try {
+      const response = await api.post('/auth/forgot-password', { email });
+      return response.data;
+    } catch (error) {
+      console.error('Forgot password error:', error);
+      throw error;
+    }
   },
 
-  async resetPassword(token: string, password: string): Promise<void> {
-    await api.post('/auth/reset-password', { token, password });
+  async resetPassword(token: string, password: string): Promise<{ message: string }> {
+    try {
+      console.log('Sending reset password request with token:', token);
+      const response = await api.post('/auth/reset-password', { token, password });
+      console.log('Reset password response:', response.data);
+      return response.data;
+    } catch (error: any) {
+      console.error('Reset password error:', error);
+      console.error('Error response:', error.response?.data);
+      throw error;
+    }
+  },
+
+  async requestOtp(email: string): Promise<{ message: string }> {
+    try {
+      const response = await api.post('/auth/request-otp', { email });
+      console.log('Request OTP response:', response.data);
+      return response.data.data || response.data;
+    } catch (error: any) {
+      console.error('Request OTP error:', error);
+      throw error;
+    }
+  },
+
+  async verifyOtp(email: string, otp: string): Promise<AuthResponse> {
+    try {
+      const response = await api.post<ApiResponse<AuthResponse>>('/auth/verify-otp', { email, otp });
+      console.log('Verify OTP response:', response.data);
+      
+      if (response.data.data) {
+        return response.data.data;
+      } else {
+        return response.data as unknown as AuthResponse;
+      }
+    } catch (error: any) {
+      console.error('Verify OTP error:', error);
+      throw error;
+    }
   },
 };
 
 export const userService = {
   async getProfile(): Promise<User> {
-    const response = await api.get<ApiResponse<User>>('/users/profile');
-    return response.data.data;
+    try {
+      const response = await api.get<ApiResponse<User>>('/users/profile');
+      console.log('Profile response:', response.data);
+      
+      // Avec l'intercepteur backend, la réponse est toujours { data: ... }
+      return response.data.data;
+    } catch (error: any) {
+      console.error('Erreur dans getProfile:', error);
+      if (error.response) {
+        console.error('Response data:', error.response.data);
+      }
+      throw error;
+    }
   },
 
   async updateProfile(data: Partial<User>): Promise<User> {
@@ -243,5 +491,21 @@ export const userService = {
 
   async deleteUser(userId: string): Promise<void> {
     await api.delete(`/users/${userId}`);
+  },
+
+  async uploadAvatar(file: File): Promise<{ avatarUrl: string; message: string }> {
+    const formData = new FormData();
+    formData.append('avatar', file);
+    
+    const response = await api.post<ApiResponse<{ avatarUrl: string; message: string }>>('/users/avatar', formData, {
+      headers: {
+        'Content-Type': 'multipart/form-data',
+      },
+    });
+    return response.data.data;
+  },
+
+  async deleteAvatar(): Promise<void> {
+    await api.delete('/users/avatar');
   },
 };

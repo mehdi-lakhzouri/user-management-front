@@ -33,16 +33,16 @@ export default function ForgotPasswordPage() {
     setIsLoading(true);
     
     try {
-      await authService.forgotPassword(data.email);
+      const response = await authService.forgotPassword(data.email);
       setIsSuccess(true);
       toast.success('Email envoyé !', {
-        description: 'Si votre email existe, vous recevrez un lien de réinitialisation.',
+        description: response.message,
       });
     } catch (error: any) {
-      toast.success('Email envoyé !', {
-        description: 'Si votre email existe, vous recevrez un lien de réinitialisation.',
+      const errorMessage = error.response?.data?.message || 'Une erreur est survenue. Veuillez réessayer.';
+      toast.error('Erreur', {
+        description: errorMessage,
       });
-      setIsSuccess(true);
     } finally {
       setIsLoading(false);
     }

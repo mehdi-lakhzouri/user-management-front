@@ -1,6 +1,7 @@
 'use client';
 
 import { useState } from 'react';
+import { AvatarDropzone } from './AvatarDropzone';
 import { useRouter } from 'next/navigation';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
@@ -25,6 +26,9 @@ export function RegisterForm({ onSuccess }: RegisterFormProps) {
   const [showPassword, setShowPassword] = useState(false);
   const [showConfirmPassword, setShowConfirmPassword] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
+  const [avatarFile, setAvatarFile] = useState<File | null>(null);
+  const [avatarPreview, setAvatarPreview] = useState<string | undefined>(undefined);
+  const [avatarError, setAvatarError] = useState<string | undefined>(undefined);
   const router = useRouter();
   const setAuth = useAuthStore((state) => state.setAuth);
 
@@ -38,48 +42,36 @@ export function RegisterForm({ onSuccess }: RegisterFormProps) {
 
   const onSubmit = async (data: RegisterFormData) => {
     setIsLoading(true);
-    
+    setAvatarError(undefined);
     try {
-      console.log('Données du formulaire:', data);
+      // Validation côté client : avatar obligatoire ?
+      // (optionnel, sinon commenter la ligne suivante)
+      // if (!avatarFile) throw new Error("Veuillez sélectionner un avatar.");
+
       const { confirmPassword, ...registerData } = data;
-      console.log('Données envoyées à l\'API:', registerData);
-      
-      const response = await authService.register(registerData);
-      console.log('Réponse reçue dans RegisterForm:', response);
-      
-      // Vérification de sécurité de la structure de la réponse
-      if (!response || !response.user || !response.accessToken || !response.refreshToken) {
-        console.error('Structure de réponse invalide:', response);
-        throw new Error('Réponse du serveur invalide - données manquantes');
-      }
-      
-      setAuth(response.user, response.accessToken, response.refreshToken);
-      
-      toast.success('Inscription réussie !', {
-        description: `Bienvenue ${response.user.fullname}`,
+      const formData = new FormData();
+      Object.entries(registerData).forEach(([key, value]) => {
+        formData.append(key, value as string);
       });
-      
+      if (avatarFile) {
+        formData.append('avatar', avatarFile);
+      }
+
+      // Utiliser le service Axios pour l'inscription avec avatar
+      const result = await authService.registerWithAvatar(formData);
+      setAuth(result.user, result.accessToken, result.refreshToken);
+      toast.success('Inscription réussie !', {
+        description: `Bienvenue ${result.user.fullname}`,
+      });
       if (onSuccess) {
         onSuccess();
       } else {
         router.push('/dashboard');
       }
     } catch (error: any) {
-      console.error('Erreur d\'inscription:', error);
-      console.error('Réponse de l\'erreur:', error.response);
-      
       let errorMessage = 'Erreur lors de l\'inscription';
-      
-      if (error.response?.data?.message) {
-        if (Array.isArray(error.response.data.message)) {
-          errorMessage = error.response.data.message.join(', ');
-        } else {
-          errorMessage = error.response.data.message;
-        }
-      } else if (error.message) {
-        errorMessage = error.message;
-      }
-      
+      if (error.message) errorMessage = error.message;
+      setAvatarError(errorMessage);
       toast.error('Échec de l\'inscription', {
         description: errorMessage,
       });
@@ -104,6 +96,23 @@ export function RegisterForm({ onSuccess }: RegisterFormProps) {
         </CardHeader>
         <CardContent>
           <form onSubmit={handleSubmit(onSubmit)} className="space-y-4">
+            {/* Champ d'upload d'avatar avec drag & drop, preview, micro-interaction */}
+            <div className="space-y-2">
+              <Label>Avatar</Label>
+              <AvatarDropzone
+                onFileSelect={(file) => {
+                  setAvatarFile(file);
+                  setAvatarError(undefined);
+                  const url = URL.createObjectURL(file);
+                  setAvatarPreview(url);
+                }}
+                previewUrl={avatarPreview}
+                error={avatarError}
+              />
+              {avatarError && (
+                <p className="text-xs text-destructive mt-1">{avatarError}</p>
+              )}
+            </div>
             <div className="space-y-2">
               <Label htmlFor="fullname">Nom complet</Label>
               <Input

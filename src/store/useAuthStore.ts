@@ -8,6 +8,8 @@ interface AuthState {
   refreshToken: string | null;
   isAuthenticated: boolean;
   isLoading: boolean;
+  lastTokenRefresh: number | null;
+  error: string | null;
 }
 
 interface AuthActions {
@@ -17,6 +19,8 @@ interface AuthActions {
   clearAuth: () => void;
   setLoading: (isLoading: boolean) => void;
   updateUser: (userData: Partial<User>) => void;
+  setError: (error: string | null) => void;
+  setTokenRefreshed: () => void;
 }
 
 type AuthStore = AuthState & AuthActions;
@@ -27,6 +31,8 @@ const initialState: AuthState = {
   refreshToken: null,
   isAuthenticated: false,
   isLoading: false,
+  lastTokenRefresh: null,
+  error: null,
 };
 
 export const useAuthStore = create<AuthStore>()(
@@ -35,24 +41,35 @@ export const useAuthStore = create<AuthStore>()(
       ...initialState,
       
       setUser: (user: User) => {
-        set({ user, isAuthenticated: true });
+        console.log('[AUTH STORE] setUser', user.fullname);
+        set({ user, isAuthenticated: true, error: null });
       },
       
       setTokens: (accessToken: string, refreshToken: string) => {
-        set({ accessToken, refreshToken });
+        console.log('[AUTH STORE] setTokens');
+        set({ 
+          accessToken, 
+          refreshToken,
+          lastTokenRefresh: Date.now(),
+          error: null 
+        });
       },
       
       setAuth: (user: User, accessToken: string, refreshToken: string) => {
+        console.log('[AUTH STORE] setAuth', user.fullname);
         set({
           user,
           accessToken,
           refreshToken,
           isAuthenticated: true,
           isLoading: false,
+          lastTokenRefresh: Date.now(),
+          error: null,
         });
       },
       
       clearAuth: () => {
+        console.log('[AUTH STORE] clearAuth');
         set({
           ...initialState,
           isLoading: false,
@@ -66,8 +83,19 @@ export const useAuthStore = create<AuthStore>()(
       updateUser: (userData: Partial<User>) => {
         const currentUser = get().user;
         if (currentUser) {
+          console.log('[AUTH STORE] updateUser', userData);
           set({ user: { ...currentUser, ...userData } });
         }
+      },
+      
+      setError: (error: string | null) => {
+        console.log('[AUTH STORE] setError', error);
+        set({ error });
+      },
+      
+      setTokenRefreshed: () => {
+        console.log('[AUTH STORE] setTokenRefreshed');
+        set({ lastTokenRefresh: Date.now(), error: null });
       },
     }),
     {
@@ -77,7 +105,9 @@ export const useAuthStore = create<AuthStore>()(
         accessToken: state.accessToken,
         refreshToken: state.refreshToken,
         isAuthenticated: state.isAuthenticated,
+        lastTokenRefresh: state.lastTokenRefresh,
       }),
+      skipHydration: false, // S'assurer que l'hydration se fait bien
     }
   )
 );

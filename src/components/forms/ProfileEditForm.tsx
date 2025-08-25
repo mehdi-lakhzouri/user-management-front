@@ -1,6 +1,8 @@
 'use client';
 
 import React, { useState } from 'react';
+import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
+import { AvatarDropzone } from './AvatarDropzone';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
@@ -12,6 +14,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { userService } from '@/lib/api';
 import { toast } from 'sonner';
 import { Loader2 } from 'lucide-react';
+import { useAuthStore } from '@/store/useAuthStore';
 
 // Schema de validation pour le profil
 const profileSchema = z.object({
@@ -19,7 +22,7 @@ const profileSchema = z.object({
   email: z.string().email('Format d\'email invalide'),
   age: z.number().min(13, 'L\'âge doit être d\'au moins 13 ans').max(120, 'L\'âge ne peut pas dépasser 120 ans'),
   gender: z.enum(['male', 'female', 'other']).optional(),
-  avatar: z.string().url('Veuillez entrer une URL valide').optional().or(z.literal('')),
+  avatar: z.string().optional(), // on gère la validation côté UI
 });
 
 type ProfileFormData = z.infer<typeof profileSchema>;
@@ -46,6 +49,11 @@ interface ProfileEditDialogProps {
 
 export function ProfileEditDialog({ isOpen, onClose, user, onUpdate }: ProfileEditDialogProps) {
   const [isLoading, setIsLoading] = useState(false);
+  const [avatarFile, setAvatarFile] = useState<File | null>(null);
+  const [avatarPreview, setAvatarPreview] = useState<string | undefined>(user?.avatar);
+  const [avatarError, setAvatarError] = useState<string | undefined>(undefined);
+  const [avatarDeleted, setAvatarDeleted] = useState(false);
+  const { accessToken } = useAuthStore();
 
   const {
     register,
@@ -75,27 +83,84 @@ export function ProfileEditDialog({ isOpen, onClose, user, onUpdate }: ProfileEd
         gender: user.gender || undefined,
         avatar: user.avatar || '',
       });
+      setAvatarPreview(user.avatar || undefined);
+      setAvatarFile(null);
+      setAvatarDeleted(false);
+      setAvatarError(undefined);
     }
   }, [user, reset]);
 
   const onSubmit = async (data: ProfileFormData) => {
     if (!user) return;
-
     try {
       setIsLoading(true);
-      console.log('Données du profil à envoyer:', data);
-
-      const response = await userService.updateProfile(data);
-      console.log('Réponse de mise à jour du profil:', response);
-
-      // Mettre à jour l'utilisateur dans le store
-      onUpdate(response);
+      let updatedUser;
       
+      // Gestion spéciale pour la suppression d'avatar
+      if (avatarDeleted && user.avatar && !avatarFile) {
+        try {
+          await userService.deleteAvatar();
+          // Mettre à jour le profil sans avatar
+          updatedUser = await userService.updateProfile({
+            fullname: data.fullname,
+            email: data.email,
+            age: data.age,
+            gender: data.gender,
+          });
+        } catch (error) {
+          console.warn('Erreur lors de la suppression de l\'avatar:', error);
+          throw error;
+        }
+      } else {
+        // Préparer les données FormData (toujours, car le backend utilise FileInterceptor)
+        const formData = new FormData();
+        formData.append('fullname', data.fullname);
+        formData.append('email', data.email);
+        formData.append('age', String(data.age));
+        if (data.gender) formData.append('gender', data.gender);
+        
+        // Ajouter le fichier avatar s'il est présent
+        if (avatarFile) {
+          formData.append('avatar', avatarFile);
+        }
+        
+        console.log('Envoi FormData avec:', {
+          fullname: data.fullname,
+          email: data.email,
+          age: data.age,
+          gender: data.gender,
+          hasAvatar: !!avatarFile
+        });
+        
+        // Utiliser fetch avec multipart/form-data
+        const response = await fetch('http://localhost:3000/api/users/profile', {
+          method: 'PATCH',
+          headers: {
+            'Authorization': `Bearer ${accessToken || ''}`,
+            // NE PAS ajouter Content-Type, le navigateur le gère automatiquement pour FormData
+          },
+          body: formData,
+        });
+        
+        if (!response.ok) {
+          const errorText = await response.text();
+          console.error('Erreur API:', errorText);
+          throw new Error(errorText || 'Erreur lors de la mise à jour');
+        }
+        
+        const responseData = await response.json();
+        console.log('Réponse API:', responseData);
+        updatedUser = responseData.data || responseData;
+      }
+      
+      onUpdate(updatedUser);
       toast.success('Profil mis à jour avec succès');
       onClose();
     } catch (error: any) {
-      console.error('Erreur lors de la mise à jour du profil:', error);
-      toast.error(error?.response?.data?.message || 'Erreur lors de la mise à jour du profil');
+      console.error('Erreur mise à jour profil:', error);
+      const errorMessage = error?.response?.data?.message || error?.message || 'Erreur lors de la mise à jour du profil';
+      setAvatarError(errorMessage);
+      toast.error(errorMessage);
     } finally {
       setIsLoading(false);
     }
@@ -137,16 +202,112 @@ export function ProfileEditDialog({ isOpen, onClose, user, onUpdate }: ProfileEd
           </div>
 
           <div className="space-y-2">
-            <Label htmlFor="avatar">Avatar (URL)</Label>
-            <Input
-              id="avatar"
-              type="url"
-              {...register('avatar')}
-              placeholder="https://example.com/votre-avatar.jpg"
-            />
-            {errors.avatar && (
-              <p className="text-sm text-destructive">{errors.avatar.message}</p>
-            )}
+            <Label>Avatar</Label>
+            <div className="flex flex-col items-center space-y-4">
+              {/* Affichage avatar actuel ou prévisualisation */}
+              <div className="relative">
+                <Avatar className="w-24 h-24 border-4 border-muted">
+                  {(avatarPreview && !avatarDeleted) && (
+                    <img 
+                      src={avatarPreview.startsWith('blob:') 
+                        ? avatarPreview 
+                        : `http://localhost:3000${avatarPreview}`
+                      } 
+                      alt="Avatar prévisualisation"
+                      className="w-full h-full object-cover rounded-full"
+                    />
+                  )}
+                  <AvatarFallback className="text-xl">
+                    {user?.fullname?.split(' ').map(n => n[0]).join('').toUpperCase() || '??'}
+                  </AvatarFallback>
+                </Avatar>
+              </div>
+              
+              {/* Boutons de gestion avatar */}
+              <div className="flex gap-2">
+                {(user?.avatar && !avatarDeleted && !avatarFile) && (
+                  <Button 
+                    type="button" 
+                    variant="destructive" 
+                    size="sm" 
+                    onClick={() => {
+                      setAvatarDeleted(true);
+                      setAvatarPreview(undefined);
+                      setAvatarFile(null);
+                      setAvatarError(undefined);
+                    }}
+                  >
+                    Supprimer l'avatar
+                  </Button>
+                )}
+                
+                <Button 
+                  type="button" 
+                  variant="outline" 
+                  size="sm"
+                  onClick={() => {
+                    // Trigger file input click
+                    const input = document.createElement('input');
+                    input.type = 'file';
+                    input.accept = 'image/jpeg,image/jpg,image/png';
+                    input.onchange = (e) => {
+                      const file = (e.target as HTMLInputElement).files?.[0];
+                      if (file) {
+                        // Valider le fichier
+                        if (file.size > 5 * 1024 * 1024) {
+                          setAvatarError('Le fichier ne doit pas dépasser 5MB');
+                          return;
+                        }
+                        if (!['image/jpeg', 'image/jpg', 'image/png'].includes(file.type)) {
+                          setAvatarError('Seuls les formats JPG et PNG sont acceptés');
+                          return;
+                        }
+                        
+                        setAvatarFile(file);
+                        setAvatarPreview(URL.createObjectURL(file));
+                        setAvatarDeleted(false);
+                        setAvatarError(undefined);
+                      }
+                    };
+                    input.click();
+                  }}
+                >
+                  {user?.avatar ? 'Changer l\'avatar' : 'Ajouter un avatar'}
+                </Button>
+                
+                {(avatarFile || avatarDeleted) && (
+                  <Button 
+                    type="button" 
+                    variant="ghost" 
+                    size="sm"
+                    onClick={() => {
+                      setAvatarFile(null);
+                      setAvatarDeleted(false);
+                      setAvatarPreview(user?.avatar || undefined);
+                      setAvatarError(undefined);
+                    }}
+                  >
+                    Annuler
+                  </Button>
+                )}
+              </div>
+              
+              {/* Message d'état */}
+              <div className="text-center">
+                {avatarDeleted && (
+                  <p className="text-sm text-destructive">Avatar sera supprimé</p>
+                )}
+                {avatarFile && (
+                  <p className="text-sm text-green-600">Nouvel avatar sélectionné</p>
+                )}
+                {!user?.avatar && !avatarFile && !avatarDeleted && (
+                  <p className="text-sm text-muted-foreground">Aucun avatar</p>
+                )}
+                {avatarError && (
+                  <p className="text-sm text-destructive">{avatarError}</p>
+                )}
+              </div>
+            </div>
           </div>
 
           <div className="grid grid-cols-2 gap-4">

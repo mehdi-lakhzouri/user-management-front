@@ -14,6 +14,7 @@ import { Separator } from '@/components/ui/separator';
 import { ThemeToggle } from '@/components/ui/theme-toggle';
 import { ProtectedRoute } from '@/components/ProtectedRoute';
 import { DateClientOnly } from '@/components/ui/DateClientOnly';
+import { HydrationGuard } from '@/components/HydrationGuard';
 
 import { useAuthStore, usePermissions } from '@/store/useAuthStore';
 import { authService, userService, type User as UserType } from '@/lib/api';
@@ -21,13 +22,31 @@ import { ProfileEditDialog } from '@/components/forms/ProfileEditForm';
 import { UserManagement } from '@/components/admin/UserManagement';
 
 function DashboardContent() {
-  const { user, clearAuth, updateUser } = useAuthStore();
+  const { user, clearAuth, updateUser, isAuthenticated, setUser } = useAuthStore();
   const { canManageUsers, isAdmin, isModerator } = usePermissions();
   const [users, setUsers] = useState<UserType[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [isEditingProfile, setIsEditingProfile] = useState(false);
   const [activeTab, setActiveTab] = useState<'profile' | 'users'>('profile');
   const router = useRouter();
+
+  // Check automatique pour restaurer l'utilisateur si token présent
+  useEffect(() => {
+    console.log('[DEBUG] Dashboard useEffect', { isAuthenticated, user });
+    if (isAuthenticated && !user) {
+      console.log('[DEBUG] Tentative de restauration du profil utilisateur via /users/profile');
+      userService.getProfile()
+        .then((profile) => {
+          console.log('[DEBUG] Profil restauré avec succès', profile);
+          setUser(profile);
+        })
+        .catch((err) => {
+          console.error('[DEBUG] Échec restauration profil ou refresh token', err);
+          clearAuth();
+          router.push('/login');
+        });
+    }
+  }, [isAuthenticated, user, setUser, clearAuth, router]);
 
   const handleLogout = async () => {
     try {
@@ -116,6 +135,13 @@ function DashboardContent() {
               <ThemeToggle />
               <div className="flex items-center space-x-2">
                 <Avatar>
+                  {user.avatar && (
+                    <img 
+                      src={`http://localhost:3000${user.avatar}`} 
+                      alt={user.fullname}
+                      className="w-full h-full object-cover rounded-full"
+                    />
+                  )}
                   <AvatarFallback>{getInitials(user.fullname)}</AvatarFallback>
                 </Avatar>
                 <div className="hidden md:block">
@@ -193,6 +219,29 @@ function DashboardContent() {
                   </div>
                 </CardHeader>
                 <CardContent className="space-y-4">
+                  {/* Section Avatar */}
+                  <div className="flex justify-center mb-6">
+                    <div className="text-center space-y-2">
+                      <Avatar className="w-24 h-24 mx-auto border-4 border-background shadow-lg">
+                        {user.avatar && (
+                          <img 
+                            src={`http://localhost:3000${user.avatar}`} 
+                            alt={user.fullname}
+                            className="w-full h-full object-cover rounded-full"
+                          />
+                        )}
+                        <AvatarFallback className="text-2xl font-bold">
+                          {getInitials(user.fullname)}
+                        </AvatarFallback>
+                      </Avatar>
+                      <p className="text-sm text-muted-foreground">
+                        {user.avatar ? 'Avatar personnalisé' : 'Aucun avatar'}
+                      </p>
+                    </div>
+                  </div>
+                  
+                  <Separator />
+                  
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                     <div>
                       <p className="text-sm font-medium text-muted-foreground">Nom complet</p>

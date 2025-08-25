@@ -34,7 +34,7 @@ export const registerSchema = z.object({
   password: z
     .string()
     .min(1, 'Le mot de passe est requis')
-    .min(6, 'Le mot de passe doit contenir au moins 6 caractères')
+    .min(8, 'Le mot de passe doit contenir au moins 8 caractères')
     .regex(
       /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)/,
       'Le mot de passe doit contenir au moins une minuscule, une majuscule et un chiffre'
@@ -60,7 +60,7 @@ export const resetPasswordSchema = z.object({
   password: z
     .string()
     .min(1, 'Le mot de passe est requis')
-    .min(6, 'Le mot de passe doit contenir au moins 6 caractères')
+    .min(8, 'Le mot de passe doit contenir au moins 8 caractères')
     .regex(
       /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)/,
       'Le mot de passe doit contenir au moins une minuscule, une majuscule et un chiffre'
@@ -71,6 +71,27 @@ export const resetPasswordSchema = z.object({
 }).refine((data) => data.password === data.confirmPassword, {
   message: 'Les mots de passe ne correspondent pas',
   path: ['confirmPassword'],
+});
+
+// Schema pour demande OTP
+export const requestOtpSchema = z.object({
+  email: z
+    .string()
+    .min(1, 'L\'email est requis')
+    .email('Format d\'email invalide'),
+});
+
+// Schema pour vérification OTP
+export const verifyOtpSchema = z.object({
+  email: z
+    .string()
+    .min(1, 'L\'email est requis')
+    .email('Format d\'email invalide'),
+  otp: z
+    .string()
+    .min(1, 'Le code OTP est requis')
+    .length(6, 'Le code OTP doit contenir exactement 6 chiffres')
+    .regex(/^\d{6}$/, 'Le code OTP ne doit contenir que des chiffres'),
 });
 
 // Schema pour la mise à jour du profil
@@ -93,4 +114,6 @@ export type LoginFormData = z.infer<typeof loginSchema>;
 export type RegisterFormData = z.infer<typeof registerSchema>;
 export type ForgotPasswordFormData = z.infer<typeof forgotPasswordSchema>;
 export type ResetPasswordFormData = z.infer<typeof resetPasswordSchema>;
+export type RequestOtpFormData = z.infer<typeof requestOtpSchema>;
+export type VerifyOtpFormData = z.infer<typeof verifyOtpSchema>;
 export type UpdateProfileFormData = z.infer<typeof updateProfileSchema>;
