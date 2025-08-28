@@ -115,7 +115,10 @@ export function LoginForm2FA({ onSuccess }: LoginForm2FAProps) {
   };
 
   const handleOtpSubmit = async () => {
-    if (otp.length !== 6) {
+    // Nettoyer le code OTP et vérifier
+    const cleanOtp = otp.replace(/\D/g, '').trim();
+    
+    if (cleanOtp.length !== 6) {
       setOtpError('Le code doit contenir 6 chiffres.');
       return;
     }
@@ -124,7 +127,7 @@ export function LoginForm2FA({ onSuccess }: LoginForm2FAProps) {
     setOtpError('');
     
     try {
-      const response = await authService.verifyOtpAndLogin(email, otp, sessionToken);
+      const response = await authService.verifyOtpAndLogin(email, cleanOtp, sessionToken);
       
       // Stocker les informations d'authentification
       setAuth(response.user, response.accessToken, response.refreshToken);
@@ -184,12 +187,78 @@ export function LoginForm2FA({ onSuccess }: LoginForm2FAProps) {
 
   const handleOtpComplete = (value: string) => {
     setOtp(value);
+    // Nettoyer immédiatement l'erreur si elle existe
+    if (otpError) {
+      setOtpError('');
+    }
+    
     // Auto-vérification quand le code est complet
     setTimeout(() => {
-      if (value.length === 6) {
-        handleOtpSubmit();
+      const cleanOtp = value.replace(/\D/g, '').trim();
+      if (cleanOtp.length === 6) {
+        // Utiliser directement la valeur nettoyée pour éviter les problèmes de closure
+        verifyOtpDirectly(cleanOtp);
       }
     }, 100);
+  };
+
+  const verifyOtpDirectly = async (cleanOtp: string) => {
+    setIsLoading(true);
+    setOtpError('');
+    
+    try {
+      const response = await authService.verifyOtpAndLogin(email, cleanOtp, sessionToken);
+      
+      // Stocker les informations d'authentification
+      setAuth(response.user, response.accessToken, response.refreshToken);
+      
+      setStep('success');
+      toast.success('Connexion réussie !', {
+        description: `Bienvenue ${response.user.fullname}`,
+      });
+      
+      // Redirection après délai
+      setTimeout(() => {
+        if (onSuccess) {
+          onSuccess();
+        } else {
+          router.push('/dashboard');
+        }
+      }, 2000);
+      
+    } catch (error: unknown) {
+      const axiosError = error as { 
+        response?: { 
+          data?: { message?: string; code?: string } 
+        } 
+      };
+      
+      const errorData = axiosError.response?.data;
+      const errorCode = errorData?.code;
+      
+      // Gestion des erreurs spécifiques
+      switch (errorCode) {
+        case 'INVALID_OTP':
+          setOtpError('Code de vérification incorrect');
+          break;
+        case 'OTP_EXPIRED':
+          setOtpError('Code de vérification expiré');
+          break;
+        case 'SESSION_EXPIRED':
+          handleSessionExpired();
+          setOtpError('Session expirée');
+          return;
+        case 'TOO_MANY_ATTEMPTS':
+          setOtpError('Trop de tentatives. Attendez quelques minutes.');
+          break;
+        default:
+          setOtpError(errorData?.message || 'Code incorrect. Veuillez réessayer.');
+      }
+      
+      console.error('Erreur vérification OTP:', error);
+    } finally {
+      setIsLoading(false);
+    }
   };
 
   const handleBackToCredentials = () => {

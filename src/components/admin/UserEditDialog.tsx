@@ -10,9 +10,11 @@ import { Label } from '@/components/ui/label';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Switch } from '@/components/ui/switch';
+import { Avatar, AvatarImage, AvatarFallback } from '@/components/ui/avatar';
+import { AvatarDropzone } from '@/components/forms/AvatarDropzone';
 import { userService, type User } from '@/lib/api';
 import { toast } from 'sonner';
-import { Loader2 } from 'lucide-react';
+import { Loader2, User as UserIcon } from 'lucide-react';
 
 // Schema de validation pour l'édition d'utilisateur
 const userEditSchema = z.object({
@@ -22,7 +24,6 @@ const userEditSchema = z.object({
   gender: z.enum(['male', 'female', 'other']),
   role: z.enum(['USER', 'MODERATOR', 'ADMIN']),
   isActive: z.boolean(),
-  avatar: z.string().url('Veuillez entrer une URL valide').optional().or(z.literal('')),
 });
 
 type UserEditFormData = z.infer<typeof userEditSchema>;
@@ -37,6 +38,9 @@ interface UserEditDialogProps {
 
 export function UserEditDialog({ user, isOpen, onClose, onUpdate, userRole }: UserEditDialogProps) {
   const [isLoading, setIsLoading] = useState(false);
+  const [avatarFile, setAvatarFile] = useState<File | null>(null);
+  const [avatarPreview, setAvatarPreview] = useState<string>('');
+  const [avatarError, setAvatarError] = useState<string>('');
 
   const {
     register,
@@ -54,7 +58,6 @@ export function UserEditDialog({ user, isOpen, onClose, onUpdate, userRole }: Us
       gender: user.gender,
       role: user.role,
       isActive: user.isActive,
-      avatar: user.avatar || '',
     },
   });
 
@@ -68,14 +71,17 @@ export function UserEditDialog({ user, isOpen, onClose, onUpdate, userRole }: Us
         gender: user.gender,
         role: user.role,
         isActive: user.isActive,
-        avatar: user.avatar || '',
       });
+      setAvatarPreview(user.avatar || '');
+      setAvatarFile(null);
+      setAvatarError('');
     }
   }, [user, reset]);
 
   const onSubmit = async (data: UserEditFormData) => {
     try {
       setIsLoading(true);
+      
       console.log('Données utilisateur à modifier:', data);
 
       // Vérifier les permissions
@@ -84,13 +90,42 @@ export function UserEditDialog({ user, isOpen, onClose, onUpdate, userRole }: Us
         return;
       }
 
+      // Étape 1: Mettre à jour les informations de base
       await userService.updateUser(user.id, data);
+
+      // Étape 2: Si un nouvel avatar a été sélectionné, l'uploader
+      if (avatarFile) {
+        try {
+          const avatarResult = await userService.uploadAvatar(avatarFile);
+          console.log('Avatar uploadé:', avatarResult);
+          
+          // Mettre à jour l'avatar de l'utilisateur avec la nouvelle URL
+          await userService.updateUser(user.id, { avatar: avatarResult.avatarUrl });
+          
+          toast.success('Utilisateur et avatar mis à jour avec succès', {
+            description: `Les informations de ${data.fullname} ont été mises à jour.`,
+          });
+        } catch (avatarError: unknown) {
+          console.error('Erreur upload avatar:', avatarError);
+          toast.warning('Utilisateur mis à jour, mais erreur avec l\'avatar', {
+            description: 'Les informations ont été sauvegardées mais l\'avatar n\'a pas pu être mis à jour.',
+          });
+        }
+      } else {
+        toast.success('Utilisateur modifié avec succès', {
+          description: `Les informations de ${data.fullname} ont été mises à jour.`,
+        });
+      }
       
-      toast.success('Utilisateur modifié avec succès');
       onUpdate();
-    } catch (error: any) {
+      onClose();
+    } catch (error: unknown) {
       console.error('Erreur lors de la modification de l\'utilisateur:', error);
-      toast.error(error?.response?.data?.message || 'Erreur lors de la modification de l\'utilisateur');
+      const axiosError = error as { response?: { data?: { message?: string } } };
+      const errorMessage = axiosError?.response?.data?.message || 'Erreur lors de la modification de l\'utilisateur';
+      toast.error('Échec de la modification', {
+        description: errorMessage,
+      });
     } finally {
       setIsLoading(false);
     }
@@ -133,17 +168,57 @@ export function UserEditDialog({ user, isOpen, onClose, onUpdate, userRole }: Us
             )}
           </div>
 
-          <div className="space-y-2">
-            <Label htmlFor="avatar">Avatar (URL)</Label>
-            <Input
-              id="avatar"
-              type="url"
-              {...register('avatar')}
-              placeholder="https://example.com/avatar.jpg"
-            />
-            {errors.avatar && (
-              <p className="text-sm text-destructive">{errors.avatar.message}</p>
-            )}
+          <div className="space-y-4">
+            <Label>Avatar de l'utilisateur</Label>
+            
+            {/* Affichage de l'avatar actuel */}
+            <div className="flex items-center gap-4 p-4 border rounded-lg bg-muted/50">
+              <div className="flex flex-col items-center gap-2">
+                <Label className="text-xs text-muted-foreground">Avatar actuel</Label>
+                <Avatar className="w-16 h-16">
+                  <AvatarImage src={user.avatar} alt={user.fullname} />
+                  <AvatarFallback>
+                    <UserIcon className="w-8 h-8" />
+                  </AvatarFallback>
+                </Avatar>
+              </div>
+              
+              {avatarPreview && avatarPreview !== user.avatar && (
+                <>
+                  <div className="text-muted-foreground">→</div>
+                  <div className="flex flex-col items-center gap-2">
+                    <Label className="text-xs text-muted-foreground">Nouvel avatar</Label>
+                    <Avatar className="w-16 h-16">
+                      <AvatarImage src={avatarPreview} alt="Aperçu" />
+                      <AvatarFallback>
+                        <UserIcon className="w-8 h-8" />
+                      </AvatarFallback>
+                    </Avatar>
+                  </div>
+                </>
+              )}
+            </div>
+
+            {/* Drag & Drop d'avatar */}
+            <div className="space-y-2">
+              <Label>Changer l'avatar (optionnel)</Label>
+              <AvatarDropzone
+                onFileSelect={(file) => {
+                  setAvatarFile(file);
+                  setAvatarError('');
+                  const url = URL.createObjectURL(file);
+                  setAvatarPreview(url);
+                }}
+                previewUrl={avatarFile ? avatarPreview : undefined}
+                error={avatarError}
+              />
+              {avatarError && (
+                <p className="text-sm text-destructive">{avatarError}</p>
+              )}
+              <p className="text-xs text-muted-foreground">
+                Glissez-déposez une nouvelle image ou cliquez pour sélectionner (JPG, PNG, max 5MB)
+              </p>
+            </div>
           </div>
 
           <div className="grid grid-cols-2 gap-4">

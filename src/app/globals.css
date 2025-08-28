@@ -120,3 +120,79 @@
     @apply bg-background text-foreground;
   }
 }
+
+/* Classes de responsivité personnalisées */
+@layer utilities {
+  /* Breakpoint xs supplémentaire pour les très petits écrans */
+  .xs\:inline {
+    @media (min-width: 400px) {
+      display: inline;
+    }
+  }
+  
+  .xs\:hidden {
+    @media (min-width: 400px) {
+      display: none;
+    }
+  }
+  
+  .xs\:block {
+    @media (min-width: 400px) {
+      display: block;
+    }
+  }
+  
+  .xs\:flex {
+    @media (min-width: 400px) {
+      display: flex;
+    }
+  }
+  
+  /* Améliorations pour la troncature de texte */
+  .text-truncate-mobile {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    max-width: 180px;
+  }
+  
+  @media (min-width: 640px) {
+    .text-truncate-mobile {
+      max-width: none;
+      white-space: normal;
+    }
+  }
+  
+  /* Espacement adaptatif pour les cartes */
+  .card-spacing {
+    @apply p-3 sm:p-4 lg:p-6;
+  }
+  
+  /* Tailles de texte adaptatives */
+  .text-responsive-sm {
+    @apply text-xs sm:text-sm;
+  }
+  
+  .text-responsive-base {
+    @apply text-sm sm:text-base;
+  }
+  
+  .text-responsive-lg {
+    @apply text-base sm:text-lg lg:text-xl;
+  }
+  
+  /* Containers avec padding adaptatif */
+  .container-responsive {
+    @apply px-3 sm:px-4 lg:px-6;
+  }
+  
+  /* Grid responsive pour les statistiques */
+  .stats-grid {
+    @apply grid grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4;
+  }
+  
+  /* Boutons responsifs */
+  .btn-responsive {
+    @apply text-xs sm:text-sm px-2 sm:px-3 py-1.5 sm:py-2;
+  }
+}

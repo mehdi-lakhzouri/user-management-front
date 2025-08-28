@@ -4,7 +4,6 @@ import { useAuthStore } from '@/store/useAuthStore';
 // Configuration de l'instance Axios
 const api = axios.create({
   baseURL: process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3000/api',
-  timeout: 10000,
   headers: {
     'Content-Type': 'application/json',
   },
@@ -166,6 +165,27 @@ api.interceptors.response.use(
 
 export default api;
 
+// Fonction utilitaire pour mapper les données utilisateur du backend vers le frontend
+const mapUserData = (userData: any): User => ({
+  id: userData._id,
+  fullname: userData.fullname,
+  age: userData.age,
+  gender: userData.gender,
+  email: userData.email,
+  role: userData.role,
+  isActive: userData.isActive,
+  avatar: userData.avatar,
+  createdAt: userData.createdAt,
+  updatedAt: userData.updatedAt,
+});
+
+// Fonction utilitaire pour mapper les données d'authentification
+const mapAuthResponse = (authData: any): AuthResponse => ({
+  user: mapUserData(authData.user),
+  accessToken: authData.accessToken,
+  refreshToken: authData.refreshToken,
+});
+
 // Types pour l'authentification
 export interface LoginCredentials {
   email: string;
@@ -209,6 +229,23 @@ export interface SessionData {
   sessionToken: string;
   email: string;
   expiresAt: number;
+}
+
+// Types pour la pagination
+export interface PaginationParams {
+  page?: number;
+  limit?: number;
+  search?: string;
+  role?: string;
+  status?: string;
+}
+
+export interface PaginatedUsersResponse {
+  users: User[];
+  total: number;
+  page: number;
+  limit: number;
+  totalPages: number;
 }
 
 // Services API
@@ -455,11 +492,26 @@ export const authService = {
 export const userService = {
   async getProfile(): Promise<User> {
     try {
-      const response = await api.get<ApiResponse<User>>('/users/profile');
+      const response = await api.get<ApiResponse<any>>('/users/profile');
       console.log('Profile response:', response.data);
       
-      // Avec l'intercepteur backend, la réponse est toujours { data: ... }
-      return response.data.data;
+      // Transformer _id en id pour correspondre à l'interface frontend
+      const userData = response.data.data;
+      const user: User = {
+        id: userData._id,
+        fullname: userData.fullname,
+        age: userData.age,
+        gender: userData.gender,
+        email: userData.email,
+        role: userData.role,
+        isActive: userData.isActive,
+        avatar: userData.avatar,
+        createdAt: userData.createdAt,
+        updatedAt: userData.updatedAt,
+      };
+      
+      console.log('Mapped user profile:', user);
+      return user;
     } catch (error: any) {
       console.error('Erreur dans getProfile:', error);
       if (error.response) {
@@ -474,9 +526,60 @@ export const userService = {
     return response.data.data;
   },
 
-  async getAllUsers(): Promise<User[]> {
-    const response = await api.get<ApiResponse<User[]>>('/users');
-    return response.data.data;
+  async getAllUsers(params: PaginationParams = {}): Promise<PaginatedUsersResponse> {
+    try {
+      console.log('[getAllUsers] Début de la requête avec params:', params);
+      
+      // Construire les paramètres de requête
+      const queryParams = new URLSearchParams();
+      if (params.page) queryParams.append('page', params.page.toString());
+      if (params.limit) queryParams.append('limit', params.limit.toString());
+      if (params.search) queryParams.append('search', params.search);
+      if (params.role && params.role !== 'all') queryParams.append('role', params.role);
+      if (params.status && params.status !== 'all') queryParams.append('status', params.status);
+      
+      const queryString = queryParams.toString();
+      const url = `/users${queryString ? `?${queryString}` : ''}`;
+      
+      console.log('[getAllUsers] URL finale:', url);
+      
+      const response = await api.get<ApiResponse<{ users: any[], total: number, page: number, limit: number, totalPages?: number }>>(url);
+      console.log('[getAllUsers] Réponse brute:', response);
+      console.log('[getAllUsers] response.data:', response.data);
+      console.log('[getAllUsers] response.data.data:', response.data.data);
+      
+      // Le backend retourne { data: { users: [...], total: 4, page: 1, limit: 10 } }
+      // Transformer _id en id pour correspondre à l'interface frontend
+      const users = response.data.data.users.map(user => ({
+        id: user._id,
+        fullname: user.fullname,
+        age: user.age,
+        gender: user.gender,
+        email: user.email,
+        role: user.role,
+        isActive: user.isActive,
+        avatar: user.avatar,
+        createdAt: user.createdAt,
+        updatedAt: user.updatedAt,
+      }));
+      
+      const result = {
+        users,
+        total: response.data.data.total,
+        page: response.data.data.page,
+        limit: response.data.data.limit,
+        totalPages: response.data.data.totalPages || Math.ceil(response.data.data.total / response.data.data.limit)
+      };
+      
+      console.log('[getAllUsers] Utilisateurs mappés:', users);
+      console.log('[getAllUsers] Résultat final:', result);
+      return result;
+    } catch (error: any) {
+      console.error('[getAllUsers] Erreur:', error);
+      console.error('[getAllUsers] Erreur response:', error.response);
+      console.error('[getAllUsers] Erreur response data:', error.response?.data);
+      throw error;
+    }
   },
 
   async createUser(data: Omit<User, 'id' | 'createdAt' | 'updatedAt'>): Promise<User> {

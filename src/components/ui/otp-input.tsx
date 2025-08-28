@@ -47,12 +47,18 @@ export function OtpInput({
       const finalValue = newValue.join('').slice(0, length);
       onChange(finalValue);
       
-      // Focuser sur le prochain input vide ou le dernier
-      const nextIndex = Math.min(index + pastedDigits.length, length - 1);
-      inputRefs.current[nextIndex]?.focus();
-      
+      // Si le code est complet, retirer immédiatement le focus et déclencher onComplete
       if (finalValue.length === length) {
+        // Utiliser setTimeout pour s'assurer que l'état est bien mis à jour
+        setTimeout(() => {
+          setFocusedIndex(-1);
+          inputRefs.current.forEach(ref => ref?.blur());
+        }, 0);
         onComplete?.(finalValue);
+      } else {
+        // Focuser sur le prochain input vide ou le dernier
+        const nextIndex = Math.min(index + pastedDigits.length, length - 1);
+        inputRefs.current[nextIndex]?.focus();
       }
     } else if (numericValue.length === 1) {
       // Un seul chiffre
@@ -62,13 +68,19 @@ export function OtpInput({
       
       onChange(finalValue);
       
-      // Passer au suivant
-      if (index < length - 1) {
-        inputRefs.current[index + 1]?.focus();
-      }
-      
+      // Si le code est complet, retirer immédiatement le focus et déclencher onComplete
       if (finalValue.length === length) {
+        // Utiliser setTimeout pour s'assurer que l'état est bien mis à jour
+        setTimeout(() => {
+          setFocusedIndex(-1);
+          inputRefs.current.forEach(ref => ref?.blur());
+        }, 0);
         onComplete?.(finalValue);
+      } else {
+        // Passer au suivant seulement si pas complet
+        if (index < length - 1) {
+          inputRefs.current[index + 1]?.focus();
+        }
       }
     } else {
       // Effacement
@@ -117,14 +129,20 @@ export function OtpInput({
       const newValue = pastedData.slice(0, length);
       onChange(newValue);
       
-      // Focuser sur le dernier input rempli
-      const lastIndex = Math.min(newValue.length - 1, length - 1);
-      if (lastIndex >= 0) {
-        inputRefs.current[lastIndex]?.focus();
-      }
-      
+      // Si on a collé un code complet, retirer immédiatement le focus et déclencher onComplete
       if (newValue.length === length) {
+        // Utiliser setTimeout pour s'assurer que l'état est bien mis à jour
+        setTimeout(() => {
+          setFocusedIndex(-1); // Enlever le focus de tous les inputs
+          inputRefs.current.forEach(ref => ref?.blur()); // Blur tous les inputs
+        }, 0);
         onComplete?.(newValue);
+      } else {
+        // Focuser sur le dernier input rempli seulement si pas complet
+        const lastIndex = Math.min(newValue.length - 1, length - 1);
+        if (lastIndex >= 0) {
+          inputRefs.current[lastIndex]?.focus();
+        }
       }
     }
   };

@@ -1,9 +1,9 @@
 'use client';
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { motion } from 'framer-motion';
 import { useAuthStore } from '@/store/useAuthStore';
-import { userService, type User } from '@/lib/api';
+import { userService, type User, type PaginationParams, type PaginatedUsersResponse } from '@/lib/api';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -11,6 +11,8 @@ import { Badge } from '@/components/ui/badge';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
+import { PaginationControls } from '@/components/ui/pagination-controls';
+import { SimplePagination } from '@/components/ui/simple-pagination';
 import { 
   Search, 
   Filter, 
@@ -36,9 +38,17 @@ interface UserManagementProps {
 }
 
 export function UserManagement({ userRole }: UserManagementProps) {
-  const { user: currentUser } = useAuthStore();
-  const [users, setUsers] = useState<User[]>([]);
-  const [filteredUsers, setFilteredUsers] = useState<User[]>([]);
+  const { user: currentUser, lastTokenRefresh } = useAuthStore();
+  
+  // Pagination state
+  const [paginatedData, setPaginatedData] = useState<PaginatedUsersResponse>({
+    users: [],
+    total: 0,
+    page: 1,
+    limit: 5, // Changé de 10 à 5 pour voir la pagination plus facilement
+    totalPages: 0
+  });
+  
   const [isLoading, setIsLoading] = useState(false);
   const [searchTerm, setSearchTerm] = useState('');
   const [roleFilter, setRoleFilter] = useState<string>('all');
@@ -48,52 +58,72 @@ export function UserManagement({ userRole }: UserManagementProps) {
   const [showCreateDialog, setShowCreateDialog] = useState(false);
   const [showDeleteDialog, setShowDeleteDialog] = useState(false);
 
-  // Charger les utilisateurs
-  const loadUsers = async () => {
+  // Debounced search to avoid too many API calls
+  const [debouncedSearchTerm, setDebouncedSearchTerm] = useState('');
+  
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      setDebouncedSearchTerm(searchTerm);
+    }, 500);
+    
+    return () => clearTimeout(timer);
+  }, [searchTerm]);
+
+  // Charger les utilisateurs avec pagination
+  const loadUsers = useCallback(async (params: Partial<PaginationParams> = {}) => {
     try {
       setIsLoading(true);
-      const userData = await userService.getAllUsers();
-      setUsers(userData);
-      setFilteredUsers(userData);
+      console.log('[UserManagement] Début du chargement des utilisateurs...');
+      
+      const requestParams: PaginationParams = {
+        page: paginatedData.page,
+        limit: paginatedData.limit,
+        search: debouncedSearchTerm || undefined,
+        role: roleFilter !== 'all' ? roleFilter : undefined,
+        status: statusFilter !== 'all' ? statusFilter : undefined,
+        ...params
+      };
+      
+      const userData = await userService.getAllUsers(requestParams);
+      console.log('[UserManagement] Données reçues:', userData);
+      setPaginatedData(userData);
+      toast.success(`${userData.total} utilisateurs trouvés`);
     } catch (error: any) {
-      console.error('Erreur lors du chargement des utilisateurs:', error);
-      toast.error('Erreur lors du chargement des utilisateurs');
+      console.error('[UserManagement] Erreur lors du chargement des utilisateurs:', error);
+      toast.error('Erreur lors du chargement des utilisateurs: ' + (error.message || 'Erreur inconnue'));
     } finally {
       setIsLoading(false);
     }
-  };
+  }, [paginatedData.page, paginatedData.limit, debouncedSearchTerm, roleFilter, statusFilter]);
 
-  // Filtrer les utilisateurs
+  // Recharger après refresh de token
   useEffect(() => {
-    let filtered = users;
-
-    // Filtre par recherche
-    if (searchTerm) {
-      filtered = filtered.filter(user => 
-        user.fullname.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        user.email.toLowerCase().includes(searchTerm.toLowerCase())
-      );
+    if (lastTokenRefresh) {
+      console.log('[UserManagement] Token refreshé, rechargement des utilisateurs');
+      loadUsers({ page: 1 }); // Reset to page 1 on token refresh
     }
+  }, [lastTokenRefresh]);
 
-    // Filtre par rôle
-    if (roleFilter !== 'all') {
-      filtered = filtered.filter(user => user.role === roleFilter);
-    }
-
-    // Filtre par statut
-    if (statusFilter !== 'all') {
-      filtered = filtered.filter(user => 
-        statusFilter === 'active' ? user.isActive : !user.isActive
-      );
-    }
-
-    setFilteredUsers(filtered);
-  }, [users, searchTerm, roleFilter, statusFilter]);
+  // Recharger quand les filtres changent
+  useEffect(() => {
+    loadUsers({ page: 1 }); // Reset to page 1 when filters change
+  }, [debouncedSearchTerm, roleFilter, statusFilter]);
 
   // Charger les utilisateurs au montage
   useEffect(() => {
     loadUsers();
   }, []);
+
+  // Gestion de la pagination
+  const handlePageChange = (page: number) => {
+    setPaginatedData(prev => ({ ...prev, page }));
+    loadUsers({ page });
+  };
+
+  const handlePageSizeChange = (limit: number) => {
+    setPaginatedData(prev => ({ ...prev, limit, page: 1 }));
+    loadUsers({ page: 1, limit });
+  };
 
   // Supprimer un utilisateur (Admin seulement)
   const handleDeleteUser = async (userId: string) => {
@@ -147,67 +177,71 @@ export function UserManagement({ userRole }: UserManagementProps) {
   };
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-4 sm:space-y-6">
       {/* En-tête avec statistiques */}
       <motion.div
         initial={{ opacity: 0, y: 20 }}
         animate={{ opacity: 1, y: 0 }}
-        className="grid grid-cols-1 md:grid-cols-4 gap-4"
+        className="grid grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4"
       >
         <Card>
-          <CardContent className="p-4">
-            <div className="text-2xl font-bold text-blue-600">{Array.isArray(users) ? users.length : 0}</div>
-            <p className="text-sm text-muted-foreground">Total utilisateurs</p>
+          <CardContent className="p-3 sm:p-4">
+            <div className="text-lg sm:text-2xl font-bold text-blue-600">{paginatedData.total}</div>
+            <p className="text-xs sm:text-sm text-muted-foreground">Total utilisateurs</p>
           </CardContent>
         </Card>
         <Card>
-          <CardContent className="p-4">
-            <div className="text-2xl font-bold text-green-600">
-              {Array.isArray(users) ? users.filter(u => u.isActive).length : 0}
+          <CardContent className="p-3 sm:p-4">
+            <div className="text-lg sm:text-2xl font-bold text-green-600">
+              {paginatedData.users.filter((u: User) => u.isActive).length}
             </div>
-            <p className="text-sm text-muted-foreground">Utilisateurs actifs</p>
+            <p className="text-xs sm:text-sm text-muted-foreground">Utilisateurs actifs (page)</p>
           </CardContent>
         </Card>
         <Card>
-          <CardContent className="p-4">
-            <div className="text-2xl font-bold text-purple-600">
-              {Array.isArray(users) ? users.filter(u => u.role === 'ADMIN').length : 0}
+          <CardContent className="p-3 sm:p-4">
+            <div className="text-lg sm:text-2xl font-bold text-purple-600">
+              {paginatedData.users.filter((u: User) => u.role === 'ADMIN').length}
             </div>
-            <p className="text-sm text-muted-foreground">Administrateurs</p>
+            <p className="text-xs sm:text-sm text-muted-foreground">Administrateurs (page)</p>
           </CardContent>
         </Card>
         <Card>
-          <CardContent className="p-4">
-            <div className="text-2xl font-bold text-orange-600">
-              {Array.isArray(users) ? users.filter(u => u.role === 'MODERATOR').length : 0}
+          <CardContent className="p-3 sm:p-4">
+            <div className="text-lg sm:text-2xl font-bold text-orange-600">
+              {paginatedData.users.filter((u: User) => u.role === 'MODERATOR').length}
             </div>
-            <p className="text-sm text-muted-foreground">Modérateurs</p>
+            <p className="text-xs sm:text-sm text-muted-foreground">Modérateurs (page)</p>
           </CardContent>
         </Card>
       </motion.div>
 
       {/* Barre d'outils */}
       <Card>
-        <CardHeader>
-          <CardTitle className="flex items-center justify-between">
-            <span>Gestion des utilisateurs</span>
-            <div className="flex gap-2">
+        <CardHeader className="pb-3">
+          <CardTitle className="flex flex-col sm:flex-row sm:items-center sm:justify-between space-y-2 sm:space-y-0">
+            <span className="text-base sm:text-lg">Gestion des utilisateurs</span>
+            <div className="flex flex-col sm:flex-row gap-2">
               <Button 
-                onClick={loadUsers} 
+                onClick={() => loadUsers()} 
                 variant="outline" 
                 size="sm"
                 disabled={isLoading}
+                className="w-full sm:w-auto"
               >
                 <RefreshCw className={`w-4 h-4 mr-2 ${isLoading ? 'animate-spin' : ''}`} />
-                Actualiser
+                <span className="hidden sm:inline">Actualiser</span>
+                <span className="sm:hidden">Refresh</span>
               </Button>
               {userRole === 'ADMIN' && (
                 <Button 
                   onClick={() => setShowCreateDialog(true)}
                   size="sm"
+                  className="w-full sm:w-auto"
                 >
                   <UserPlus className="w-4 h-4 mr-2" />
-                  Créer utilisateur
+                  <span className="hidden sm:inline">Créer utilisateur</span>
+                  <span className="sm:hidden">Créer</span>
                 </Button>
               )}
             </div>
@@ -215,18 +249,18 @@ export function UserManagement({ userRole }: UserManagementProps) {
         </CardHeader>
         <CardContent className="space-y-4">
           {/* Filtres */}
-          <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4">
             <div className="relative">
               <Search className="absolute left-3 top-3 h-4 w-4 text-muted-foreground" />
               <Input
-                placeholder="Rechercher par nom ou email..."
+                placeholder="Rechercher..."
                 value={searchTerm}
                 onChange={(e) => setSearchTerm(e.target.value)}
-                className="pl-9"
+                className="pl-9 text-sm"
               />
             </div>
             <Select value={roleFilter} onValueChange={setRoleFilter}>
-              <SelectTrigger>
+              <SelectTrigger className="text-sm">
                 <SelectValue placeholder="Filtrer par rôle" />
               </SelectTrigger>
               <SelectContent>
@@ -237,7 +271,7 @@ export function UserManagement({ userRole }: UserManagementProps) {
               </SelectContent>
             </Select>
             <Select value={statusFilter} onValueChange={setStatusFilter}>
-              <SelectTrigger>
+              <SelectTrigger className="text-sm">
                 <SelectValue placeholder="Filtrer par statut" />
               </SelectTrigger>
               <SelectContent>
@@ -246,10 +280,30 @@ export function UserManagement({ userRole }: UserManagementProps) {
                 <SelectItem value="inactive">Inactifs</SelectItem>
               </SelectContent>
             </Select>
-            <div className="text-sm text-muted-foreground flex items-center">
-              <Filter className="w-4 h-4 mr-2" />
-              {Array.isArray(filteredUsers) ? filteredUsers.length : 0} utilisateur(s)
+            <div className="flex items-center gap-2">
+              <span className="text-sm text-muted-foreground whitespace-nowrap">Lignes par page:</span>
+              <Select
+                value={paginatedData.limit.toString()}
+                onValueChange={(value) => handlePageSizeChange(Number(value))}
+                disabled={isLoading}
+              >
+                <SelectTrigger className="w-16 h-8 text-sm">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="5">5</SelectItem>
+                  <SelectItem value="10">10</SelectItem>
+                  <SelectItem value="20">20</SelectItem>
+                  <SelectItem value="50">50</SelectItem>
+                </SelectContent>
+              </Select>
             </div>
+          </div>
+          
+          {/* Compteur d'utilisateurs */}
+          <div className="text-xs sm:text-sm text-muted-foreground flex items-center justify-center sm:justify-start">
+            <Filter className="w-4 h-4 mr-2" />
+            {paginatedData.users.length} utilisateur(s) sur cette page ({paginatedData.total} au total)
           </div>
         </CardContent>
       </Card>
@@ -259,58 +313,61 @@ export function UserManagement({ userRole }: UserManagementProps) {
         initial={{ opacity: 0 }}
         animate={{ opacity: 1 }}
         transition={{ delay: 0.2 }}
-        className="grid gap-4"
+        className="grid gap-3 sm:gap-4"
       >
         {isLoading ? (
           <Card>
-            <CardContent className="p-8 text-center">
-              <RefreshCw className="w-8 h-8 animate-spin mx-auto mb-4 text-muted-foreground" />
-              <p className="text-muted-foreground">Chargement des utilisateurs...</p>
+            <CardContent className="p-6 sm:p-8 text-center">
+              <RefreshCw className="w-6 h-6 sm:w-8 sm:h-8 animate-spin mx-auto mb-4 text-muted-foreground" />
+              <p className="text-sm sm:text-base text-muted-foreground">Chargement des utilisateurs...</p>
             </CardContent>
           </Card>
-        ) : !Array.isArray(filteredUsers) || filteredUsers.length === 0 ? (
+        ) : !Array.isArray(paginatedData.users) || paginatedData.users.length === 0 ? (
           <Card>
-            <CardContent className="p-8 text-center">
-              <UserIcon className="w-8 h-8 mx-auto mb-4 text-muted-foreground" />
-              <p className="text-muted-foreground">Aucun utilisateur trouvé</p>
+            <CardContent className="p-6 sm:p-8 text-center">
+              <UserIcon className="w-6 h-6 sm:w-8 sm:h-8 mx-auto mb-4 text-muted-foreground" />
+              <p className="text-sm sm:text-base text-muted-foreground">Aucun utilisateur trouvé</p>
             </CardContent>
           </Card>
         ) : (
-          filteredUsers.map((user) => (
+          paginatedData.users.map((user: User) => (
             <Card key={user.id} className="hover:shadow-md transition-shadow">
-              <CardContent className="p-6">
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center space-x-4">
-                    <Avatar className="h-12 w-12">
+              <CardContent className="p-4 sm:p-6">
+                <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between space-y-4 sm:space-y-0">
+                  <div className="flex items-center space-x-3 sm:space-x-4">
+                    <Avatar className="h-10 w-10 sm:h-12 sm:w-12 flex-shrink-0">
                       <AvatarImage src={user.avatar} alt={user.fullname} />
-                      <AvatarFallback>
-                        {user.fullname.split(' ').map(n => n[0]).join('').toUpperCase()}
+                      <AvatarFallback className="text-xs sm:text-sm">
+                        {user.fullname.split(' ').map((n: string) => n[0]).join('').toUpperCase()}
                       </AvatarFallback>
                     </Avatar>
-                    <div className="space-y-1">
-                      <div className="flex items-center space-x-2">
-                        <h3 className="font-semibold">{user.fullname}</h3>
-                        {getRoleBadge(user.role)}
-                        {getStatusBadge(user.isActive)}
+                    <div className="space-y-1 min-w-0 flex-1">
+                      <div className="flex flex-col sm:flex-row sm:items-center sm:space-x-2 space-y-1 sm:space-y-0">
+                        <h3 className="font-semibold text-sm sm:text-base truncate">{user.fullname}</h3>
+                        <div className="flex items-center space-x-2">
+                          {getRoleBadge(user.role)}
+                          {getStatusBadge(user.isActive)}
+                        </div>
                       </div>
-                      <div className="flex items-center space-x-4 text-sm text-muted-foreground">
-                        <span className="flex items-center gap-1">
-                          <Mail className="w-3 h-3" />
-                          {user.email}
+                      <div className="flex flex-col sm:flex-row sm:items-center sm:space-x-4 text-xs sm:text-sm text-muted-foreground space-y-1 sm:space-y-0">
+                        <span className="flex items-center gap-1 truncate">
+                          <Mail className="w-3 h-3 flex-shrink-0" />
+                          <span className="truncate">{user.email}</span>
                         </span>
                         <span className="flex items-center gap-1">
-                          <Calendar className="w-3 h-3" />
-                          Inscrit le {formatDate(user.createdAt)}
+                          <Calendar className="w-3 h-3 flex-shrink-0" />
+                          <span className="hidden sm:inline">Inscrit le </span>
+                          {formatDate(user.createdAt)}
                         </span>
-                        <span>Âge: {user.age} ans</span>
-                        <span>
+                        <span className="hidden lg:inline">Âge: {user.age} ans</span>
+                        <span className="hidden lg:inline">
                           {user.gender === 'male' ? 'Homme' : 
                            user.gender === 'female' ? 'Femme' : 'Autre'}
                         </span>
                       </div>
                     </div>
                   </div>
-                  <div className="flex items-center space-x-2">
+                  <div className="flex items-center space-x-2 w-full sm:w-auto">
                     <Button
                       variant="outline"
                       size="sm"
@@ -318,9 +375,10 @@ export function UserManagement({ userRole }: UserManagementProps) {
                         setSelectedUser(user);
                         setShowEditDialog(true);
                       }}
+                      className="flex-1 sm:flex-none"
                     >
-                      <Edit className="w-4 h-4 mr-1" />
-                      Modifier
+                      <Edit className="w-4 h-4 sm:mr-1" />
+                      <span className="hidden sm:inline">Modifier</span>
                     </Button>
                     {userRole === 'ADMIN' && user.id !== currentUser?.id && (
                       <Button
@@ -330,10 +388,10 @@ export function UserManagement({ userRole }: UserManagementProps) {
                           setSelectedUser(user);
                           setShowDeleteDialog(true);
                         }}
-                        className="text-destructive hover:text-destructive"
+                        className="text-destructive hover:text-destructive flex-1 sm:flex-none"
                       >
-                        <Trash2 className="w-4 h-4 mr-1" />
-                        Supprimer
+                        <Trash2 className="w-4 h-4 sm:mr-1" />
+                        <span className="hidden sm:inline">Supprimer</span>
                       </Button>
                     )}
                   </div>
@@ -343,6 +401,27 @@ export function UserManagement({ userRole }: UserManagementProps) {
           ))
         )}
       </motion.div>
+
+      {/* Pagination Controls */}
+      {!isLoading && paginatedData.totalPages > 1 && (
+        <motion.div
+          initial={{ opacity: 0, y: 20 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ delay: 0.3 }}
+        >
+          <Card>
+            <CardContent className="p-4">
+              <SimplePagination
+                currentPage={paginatedData.page}
+                totalPages={paginatedData.totalPages}
+                totalItems={paginatedData.total}
+                onPageChange={handlePageChange}
+                isLoading={isLoading}
+              />
+            </CardContent>
+          </Card>
+        </motion.div>
+      )}
 
       {/* Dialogues */}
       {showEditDialog && selectedUser && (
@@ -354,7 +433,7 @@ export function UserManagement({ userRole }: UserManagementProps) {
             setSelectedUser(null);
           }}
           onUpdate={() => {
-            loadUsers();
+            loadUsers({});
             setShowEditDialog(false);
             setSelectedUser(null);
           }}
@@ -367,7 +446,7 @@ export function UserManagement({ userRole }: UserManagementProps) {
           isOpen={showCreateDialog}
           onClose={() => setShowCreateDialog(false)}
           onCreate={() => {
-            loadUsers();
+            loadUsers({});
             setShowCreateDialog(false);
           }}
         />
