@@ -60,7 +60,7 @@ export default function Home() {
             </h1>
             
             <p className="text-xl text-muted-foreground max-w-2xl mx-auto">
-              Système complet d'authentification et de gestion d'utilisateurs 
+              Système complet d&apos;authentification et de gestion d&apos;utilisateurs 
               avec Next.js 15 et NestJS
             </p>
           </div>

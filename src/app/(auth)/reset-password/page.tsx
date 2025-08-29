@@ -66,19 +66,20 @@ export default function ResetPasswordPage() {
         router.push('/login');
       }, 3000);
       
-    } catch (error: any) {
+    } catch (error: unknown) {
+      const axiosError = error as { response?: { status?: number; data?: { message?: string } } };
       console.log('Reset password error details:', {
-        status: error.response?.status,
-        data: error.response?.data,
+        status: axiosError.response?.status,
+        data: axiosError.response?.data,
         token: token
       });
       
-      if (error.response?.status === 400) {
+      if (axiosError.response?.status === 400) {
         toast.error('Token invalide', {
           description: 'Le token de réinitialisation est invalide ou expiré. Veuillez demander un nouveau lien.',
         });
       } else {
-        const errorMessage = error.response?.data?.message || 'Une erreur est survenue. Veuillez réessayer.';
+        const errorMessage = axiosError.response?.data?.message || 'Une erreur est survenue. Veuillez réessayer.';
         toast.error('Erreur', {
           description: errorMessage,
         });

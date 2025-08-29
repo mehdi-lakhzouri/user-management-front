@@ -80,7 +80,9 @@ export function UserEditDialog({ user, isOpen, onClose, onUpdate, userRole }: Us
     }
     return () => {
       if (previousObjectUrl.current) {
-        try { URL.revokeObjectURL(previousObjectUrl.current); } catch (e) {}
+        try { URL.revokeObjectURL(previousObjectUrl.current); } catch {
+          // Ignore revoke errors
+        }
         previousObjectUrl.current = null;
       }
     };
@@ -147,7 +149,7 @@ export function UserEditDialog({ user, isOpen, onClose, onUpdate, userRole }: Us
     <Dialog open={isOpen} onOpenChange={onClose}>
       <DialogContent className="sm:max-w-[500px] max-h-[90vh] overflow-y-auto">
         <DialogHeader>
-          <DialogTitle>Modifier l'utilisateur</DialogTitle>
+          <DialogTitle>Modifier l&apos;utilisateur</DialogTitle>
         </DialogHeader>
 
         <form onSubmit={handleSubmit(onSubmit)} className="space-y-4">
@@ -177,7 +179,7 @@ export function UserEditDialog({ user, isOpen, onClose, onUpdate, userRole }: Us
           </div>
 
           <div className="space-y-4">
-            <Label>Avatar de l'utilisateur</Label>
+            <Label>Avatar de l&apos;utilisateur</Label>
             
             {/* Affichage de l'avatar actuel */}
             <div className="flex items-center gap-4 p-4 border rounded-lg bg-muted/50">
@@ -209,12 +211,14 @@ export function UserEditDialog({ user, isOpen, onClose, onUpdate, userRole }: Us
 
             {/* Drag & Drop d'avatar */}
             <div className="space-y-2">
-              <Label>Changer l'avatar (optionnel)</Label>
+              <Label>Changer l&apos;avatar (optionnel)</Label>
               <AvatarDropzone
                 onFileSelect={(file) => {
                   // Nettoyer l'ancien blob URL s'il existe
                   if (previousObjectUrl.current) {
-                    try { URL.revokeObjectURL(previousObjectUrl.current); } catch (e) {}
+                    try { URL.revokeObjectURL(previousObjectUrl.current); } catch {
+                      // Ignore revoke errors
+                    }
                   }
                   
                   setAvatarFile(file);

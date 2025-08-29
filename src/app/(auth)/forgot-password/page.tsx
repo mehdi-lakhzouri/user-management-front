@@ -38,8 +38,9 @@ export default function ForgotPasswordPage() {
       toast.success('Email envoyé !', {
         description: response.message,
       });
-    } catch (error: any) {
-      const errorMessage = error.response?.data?.message || 'Une erreur est survenue. Veuillez réessayer.';
+    } catch (error: unknown) {
+      const axiosError = error as { response?: { data?: { message?: string } } };
+      const errorMessage = axiosError.response?.data?.message || 'Une erreur est survenue. Veuillez réessayer.';
       toast.error('Erreur', {
         description: errorMessage,
       });

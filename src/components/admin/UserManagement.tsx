@@ -89,9 +89,10 @@ export function UserManagement({ userRole }: UserManagementProps) {
       console.log('[UserManagement] Données reçues:', userData);
       setPaginatedData(userData);
       toast.success(`${userData.total} utilisateurs trouvés`);
-    } catch (error: any) {
+    } catch (error: unknown) {
       console.error('[UserManagement] Erreur lors du chargement des utilisateurs:', error);
-      toast.error('Erreur lors du chargement des utilisateurs: ' + (error.message || 'Erreur inconnue'));
+      const errorMessage = error instanceof Error ? error.message : 'Erreur inconnue';
+      toast.error('Erreur lors du chargement des utilisateurs: ' + errorMessage);
     } finally {
       setIsLoading(false);
     }
@@ -139,7 +140,7 @@ export function UserManagement({ userRole }: UserManagementProps) {
       loadUsers();
       setShowDeleteDialog(false);
       setSelectedUser(null);
-    } catch (error: any) {
+    } catch (error: unknown) {
       console.error('Erreur lors de la suppression:', error);
       toast.error('Erreur lors de la suppression de l\'utilisateur');
     }
@@ -454,7 +455,7 @@ export function UserManagement({ userRole }: UserManagementProps) {
                   console.log('[UserManagement] Données utilisateur mises à jour:', updatedUser);
                   updateCurrentUser(updatedUser);
                 })
-                .catch((error: any) => {
+                .catch((error: unknown) => {
                   console.error('[UserManagement] Erreur lors de la récupération du profil mis à jour:', error);
                 });
             }
@@ -485,7 +486,7 @@ export function UserManagement({ userRole }: UserManagementProps) {
           </DialogHeader>
           <div className="space-y-4">
             <p>
-              Êtes-vous sûr de vouloir supprimer l'utilisateur <strong>{selectedUser?.fullname}</strong> ?
+              Êtes-vous sûr de vouloir supprimer l&apos;utilisateur <strong>{selectedUser?.fullname}</strong> ?
             </p>
             <p className="text-sm text-muted-foreground">
               Cette action est irréversible.

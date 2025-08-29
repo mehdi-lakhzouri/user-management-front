@@ -17,7 +17,6 @@ import { OtpInput } from '@/components/ui/otp-input';
 
 import { registerSchema, type RegisterFormData } from '@/lib/validations';
 import { authService } from '@/lib/api';
-import { useAuthStore } from '@/store/useAuthStore';
 
 interface RegisterFormProps {
   onSuccess?: () => void;
@@ -52,7 +51,7 @@ export function RegisterForm({ onSuccess }: RegisterFormProps) {
       // (optionnel, sinon commenter la ligne suivante)
       // if (!avatarFile) throw new Error("Veuillez sélectionner un avatar.");
 
-      const { confirmPassword, ...registerData } = data;
+      const { confirmPassword: _, ...registerData } = data;
       const formData = new FormData();
       Object.entries(registerData).forEach(([key, value]) => {
         formData.append(key, value as string);
@@ -62,7 +61,7 @@ export function RegisterForm({ onSuccess }: RegisterFormProps) {
       }
 
       // Utiliser la méthode unifiée pour l'inscription
-      const result = await authService.registerUnified(formData);
+      await authService.registerUnified(formData);
       
       // Ne plus connecter automatiquement, mais demander vérification OTP
       setUserEmail(data.email);
@@ -71,9 +70,10 @@ export function RegisterForm({ onSuccess }: RegisterFormProps) {
       toast.success('Inscription réussie !', {
         description: `Un code de vérification a été envoyé à ${data.email}`,
       });
-    } catch (error: any) {
+    } catch (error: unknown) {
+      const errorObj = error as { message?: string };
       let errorMessage = 'Erreur lors de l\'inscription';
-      if (error.message) errorMessage = error.message;
+      if (errorObj.message) errorMessage = errorObj.message;
       setAvatarError(errorMessage);
       toast.error('Échec de l\'inscription', {
         description: errorMessage,
@@ -105,8 +105,9 @@ export function RegisterForm({ onSuccess }: RegisterFormProps) {
       } else {
         router.push('/login');
       }
-    } catch (error: any) {
-      const errorMessage = error.response?.data?.message || 'Code de vérification incorrect';
+    } catch (error: unknown) {
+      const axiosError = error as { response?: { data?: { message?: string } } };
+      const errorMessage = axiosError.response?.data?.message || 'Code de vérification incorrect';
       setOtpError(errorMessage);
       toast.error('Erreur de vérification', {
         description: errorMessage,
@@ -123,7 +124,8 @@ export function RegisterForm({ onSuccess }: RegisterFormProps) {
       toast.info('Code déjà envoyé', {
         description: 'Le code de vérification a déjà été envoyé lors de l\'inscription.',
       });
-    } catch (error: any) {
+    } catch {
+      // Erreur ignorée car c'est juste pour l'UX
       toast.error('Erreur lors du renvoi', {
         description: 'Impossible de renvoyer le code.',
       });

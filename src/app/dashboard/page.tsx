@@ -86,7 +86,7 @@ function DashboardContent() {
     try {
       const usersData = await userService.getAllUsers({ page: 1, limit: 100 }); // Get first 100 users for stats
       setUsers(usersData.users); // Use the users array from paginated response
-    } catch (error: any) {
+    } catch (error: unknown) {
       toast.error('Erreur', {
         description: 'Impossible de charger la liste des utilisateurs',
       });

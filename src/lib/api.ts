@@ -10,7 +10,7 @@ const api = axios.create({
 });
 
 // Types pour les réponses API
-export interface ApiResponse<T = any> {
+export interface ApiResponse<T = unknown> {
   data: T;
   message?: string;
   statusCode?: number;
@@ -41,11 +41,11 @@ api.interceptors.request.use(
 // Variable pour éviter les requêtes de refresh simultanées
 let isRefreshing = false;
 let failedQueue: Array<{
-  resolve: (value: any) => void;
-  reject: (reason: any) => void;
+  resolve: (value: string | null) => void;
+  reject: (reason: unknown) => void;
 }> = [];
 
-const processQueue = (error: any, token: string | null = null) => {
+const processQueue = (error: unknown, token: string | null = null) => {
   failedQueue.forEach(({ resolve, reject }) => {
     if (error) {
       reject(error);
@@ -142,7 +142,7 @@ api.interceptors.response.use(
         console.log('Token refreshé avec succès, retry de la requête originale');
         return api(originalRequest);
         
-      } catch (refreshError: any) {
+      } catch (refreshError: unknown) {
         console.error('Erreur lors du refresh:', refreshError);
         processQueue(refreshError, null);
         
@@ -166,24 +166,24 @@ api.interceptors.response.use(
 export default api;
 
 // Fonction utilitaire pour mapper les données utilisateur du backend vers le frontend
-const mapUserData = (userData: any): User => ({
-  id: userData._id,
-  fullname: userData.fullname,
-  age: userData.age,
-  gender: userData.gender,
-  email: userData.email,
-  role: userData.role,
-  isActive: userData.isActive,
-  avatar: userData.avatar,
-  createdAt: userData.createdAt,
-  updatedAt: userData.updatedAt,
+const mapUserData = (userData: Record<string, unknown>): User => ({
+  id: userData._id as string,
+  fullname: userData.fullname as string,
+  age: userData.age as number,
+  gender: userData.gender as 'male' | 'female' | 'other',
+  email: userData.email as string,
+  role: userData.role as 'USER' | 'MODERATOR' | 'ADMIN',
+  isActive: userData.isActive as boolean,
+  avatar: userData.avatar as string | undefined,
+  createdAt: userData.createdAt as string,
+  updatedAt: userData.updatedAt as string,
 });
 
 // Fonction utilitaire pour mapper les données d'authentification
-const mapAuthResponse = (authData: any): AuthResponse => ({
-  user: mapUserData(authData.user),
-  accessToken: authData.accessToken,
-  refreshToken: authData.refreshToken,
+const mapAuthResponse = (authData: Record<string, unknown>): AuthResponse => ({
+  user: mapUserData(authData.user as Record<string, unknown>),
+  accessToken: authData.accessToken as string,
+  refreshToken: authData.refreshToken as string,
 });
 
 // Types pour l'authentification
@@ -222,15 +222,15 @@ export interface CreateUserData {
   gender: 'male' | 'female' | 'other';
   role: 'USER' | 'MODERATOR' | 'ADMIN';
   isActive: boolean;
-  password?: string; // Optionnel car peut être généré automatiquement
+  password?: string; 
 }
 
 // Nouveau type pour la réponse de création d'utilisateur
 export interface CreateUserResponse {
   message: string;
   user: User;
-  temporaryPassword?: string; // Présent seulement si un mot de passe temporaire a été généré
-  emailSent?: boolean; // Indique si l'email a été envoyé avec succès
+  temporaryPassword?: string; 
+  emailSent?: boolean; 
 }
 
 // Type pour le changement de mot de passe
@@ -311,11 +311,13 @@ export const authService = {
       } else {
         return response.data as unknown as AuthResponse;
       }
-    } catch (error: any) {
+    } catch (error: unknown) {
       console.error('Erreur dans registerUnified:', error);
-      if (error.response) {
-        console.error('Statut:', error.response.status);
-        console.error('Data:', error.response.data);
+      // Pour les erreurs Axios, on peut extraire plus d'infos
+      if (error && typeof error === 'object' && 'response' in error) {
+        const axiosError = error as { response?: { status?: number; data?: unknown } };
+        console.error('Statut:', axiosError.response?.status);
+        console.error('Data:', axiosError.response?.data);
       }
       throw error;
     }
@@ -417,7 +419,7 @@ export const authService = {
         console.warn('Pas de refreshToken disponible pour logout');
         // Continuer quand même la déconnexion côté client
       }
-    } catch (error: any) {
+    } catch (error: unknown) {
       console.error('Erreur lors du logout:', error);
       // Ne pas throw l'erreur pour permettre la déconnexion côté client
     }
@@ -434,7 +436,7 @@ export const authService = {
       } else {
         return response.data as unknown as ChangePasswordResponse;
       }
-    } catch (error: any) {
+    } catch (error: unknown) {
       console.error('Erreur changement mot de passe:', error);
       throw error;
     }
@@ -472,9 +474,13 @@ export const authService = {
       const response = await api.post('/auth/reset-password', { token, password });
       console.log('Reset password response:', response.data);
       return response.data;
-    } catch (error: any) {
+    } catch (error: unknown) {
       console.error('Reset password error:', error);
-      console.error('Error response:', error.response?.data);
+      // Pour les erreurs Axios, extraire plus d'infos
+      if (error && typeof error === 'object' && 'response' in error) {
+        const axiosError = error as { response?: { data?: unknown } };
+        console.error('Error response:', axiosError.response?.data);
+      }
       throw error;
     }
   },
@@ -485,30 +491,21 @@ export const authService = {
 export const userService = {
   async getProfile(): Promise<User> {
     try {
-      const response = await api.get<ApiResponse<any>>('/users/profile');
+      const response = await api.get<ApiResponse<Record<string, unknown>>>('/users/profile');
       console.log('Profile response:', response.data);
       
-      // Transformer _id en id pour correspondre à l'interface frontend
-      const userData = response.data.data;
-      const user: User = {
-        id: userData._id,
-        fullname: userData.fullname,
-        age: userData.age,
-        gender: userData.gender,
-        email: userData.email,
-        role: userData.role,
-        isActive: userData.isActive,
-        avatar: userData.avatar,
-        createdAt: userData.createdAt,
-        updatedAt: userData.updatedAt,
-      };
+      // Utiliser la fonction mapUserData pour transformer les données
+      const userData = response.data.data as Record<string, unknown>;
+      const user = mapUserData(userData);
       
       console.log('Mapped user profile:', user);
       return user;
-    } catch (error: any) {
+    } catch (error: unknown) {
       console.error('Erreur dans getProfile:', error);
-      if (error.response) {
-        console.error('Response data:', error.response.data);
+        
+      if (error && typeof error === 'object' && 'response' in error) {
+        const axiosError = error as { response?: { data?: unknown } };
+        console.error('Response data:', axiosError.response?.data);
       }
       throw error;
     }
@@ -545,10 +542,11 @@ export const userService = {
       };
       
       return user;
-    } catch (error: any) {
+    } catch (error: unknown) {
       console.error('Erreur dans updateProfileWithFormData:', error);
-      if (error.response) {
-        console.error('Response data:', error.response.data);
+      if (error && typeof error === 'object' && 'response' in error) {
+        const axiosError = error as { response?: { data?: unknown } };
+        console.error('Response data:', axiosError.response?.data);
       }
       throw error;
     }
@@ -571,25 +569,14 @@ export const userService = {
       
       console.log('[getAllUsers] URL finale:', url);
       
-      const response = await api.get<ApiResponse<{ users: any[], total: number, page: number, limit: number, totalPages?: number }>>(url);
+      const response = await api.get<ApiResponse<{ users: Record<string, unknown>[], total: number, page: number, limit: number, totalPages?: number }>>(url);
       console.log('[getAllUsers] Réponse brute:', response);
       console.log('[getAllUsers] response.data:', response.data);
       console.log('[getAllUsers] response.data.data:', response.data.data);
       
       // Le backend retourne { data: { users: [...], total: 4, page: 1, limit: 10 } }
-      // Transformer _id en id pour correspondre à l'interface frontend
-      const users = response.data.data.users.map(user => ({
-        id: user._id,
-        fullname: user.fullname,
-        age: user.age,
-        gender: user.gender,
-        email: user.email,
-        role: user.role,
-        isActive: user.isActive,
-        avatar: user.avatar,
-        createdAt: user.createdAt,
-        updatedAt: user.updatedAt,
-      }));
+      // Utiliser mapUserData pour transformer chaque utilisateur
+      const users = response.data.data.users.map(user => mapUserData(user));
       
       const result = {
         users,
@@ -602,10 +589,13 @@ export const userService = {
       console.log('[getAllUsers] Utilisateurs mappés:', users);
       console.log('[getAllUsers] Résultat final:', result);
       return result;
-    } catch (error: any) {
+    } catch (error: unknown) {
       console.error('[getAllUsers] Erreur:', error);
-      console.error('[getAllUsers] Erreur response:', error.response);
-      console.error('[getAllUsers] Erreur response data:', error.response?.data);
+      if (error && typeof error === 'object' && 'response' in error) {
+        const axiosError = error as { response?: { data?: unknown } };
+        console.error('[getAllUsers] Erreur response:', axiosError.response);
+        console.error('[getAllUsers] Erreur response data:', axiosError.response?.data);
+      }
       throw error;
     }
   },
@@ -620,32 +610,33 @@ export const userService = {
       if (response.data.data) {
         return response.data.data;
       } else {
-        // Fallback pour l'ancien format si nécessaire - type any pour éviter les erreurs
-        const userData = response.data as any;
+        // Fallback pour l'ancien format si nécessaire
+        const userData = response.data as unknown as Record<string, unknown>;
         return {
-          message: userData.message || 'Utilisateur créé avec succès',
+          message: (userData.message as string) || 'Utilisateur créé avec succès',
           user: {
-            id: userData._id || userData.id,
-            fullname: userData.fullname,
-            age: userData.age,
-            gender: userData.gender,
-            email: userData.email,
-            role: userData.role,
-            isActive: userData.isActive,
-            avatar: userData.avatar,
-            mustChangePassword: userData.mustChangePassword,
-            createdAt: userData.createdAt,
-            updatedAt: userData.updatedAt,
+            id: (userData._id as string) || (userData.id as string),
+            fullname: userData.fullname as string,
+            age: userData.age as number,
+            gender: userData.gender as 'male' | 'female' | 'other',
+            email: userData.email as string,
+            role: userData.role as 'USER' | 'MODERATOR' | 'ADMIN',
+            isActive: userData.isActive as boolean,
+            avatar: userData.avatar as string | undefined,
+            mustChangePassword: userData.mustChangePassword as boolean,
+            createdAt: userData.createdAt as string,
+            updatedAt: userData.updatedAt as string,
           },
-          temporaryPassword: userData.temporaryPassword,
-          emailSent: userData.emailSent,
+          temporaryPassword: userData.temporaryPassword as string | undefined,
+          emailSent: userData.emailSent as boolean,
         };
       }
-    } catch (error: any) {
+    } catch (error: unknown) {
       console.error('Erreur dans createUser:', error);
-      if (error.response) {
-        console.error('Response status:', error.response.status);
-        console.error('Response data:', error.response.data);
+      if (error && typeof error === 'object' && 'response' in error) {
+        const axiosError = error as { response?: { status?: number; data?: unknown } };
+        console.error('Response status:', axiosError.response?.status);
+        console.error('Response data:', axiosError.response?.data);
       }
       throw error;
     }

@@ -5,7 +5,7 @@ import { useRouter } from 'next/navigation';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { motion } from 'framer-motion';
-import { Eye, EyeOff, Loader2 } from 'lucide-react';
+import { Eye, EyeOff } from 'lucide-react';
 import { toast } from 'sonner';
 
 import { Button } from '@/components/ui/button';
@@ -14,9 +14,6 @@ import { Label } from '@/components/ui/label';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 
 import { loginSchema, type LoginFormData } from '@/lib/validations';
-import { authService } from '@/lib/api';
-import { useAuthStore } from '@/store/useAuthStore';
-import { ChangePasswordDialog } from './ChangePasswordDialog';
 
 interface LoginFormProps {
   onSuccess?: () => void;
@@ -24,10 +21,7 @@ interface LoginFormProps {
 
 export function LoginForm({ onSuccess }: LoginFormProps) {
   const [showPassword, setShowPassword] = useState(false);
-  const [isLoading, setIsLoading] = useState(false);
-  const [showChangePassword, setShowChangePassword] = useState(false);
   const router = useRouter();
-  const setAuth = useAuthStore((state) => state.setAuth);
 
   const {
     register,
@@ -50,26 +44,6 @@ export function LoginForm({ onSuccess }: LoginFormProps) {
     }
     
     router.push('/login');
-  };
-
-  const handleChangePasswordClose = () => {
-    // Si l'utilisateur ferme le dialog de changement de mot de passe obligatoire,
-    // on ne fait rien car il ne peut pas continuer sans changer le mot de passe
-    // Le dialog est configuré avec isRequired=true donc il ne peut pas être fermé
-  };
-
-  const handleChangePasswordSuccess = () => {
-    // Après changement de mot de passe obligatoire réussi,
-    // rediriger vers la destination habituelle
-    toast.success('Bienvenue !', {
-      description: 'Vous pouvez maintenant utiliser l\'application.',
-    });
-    
-    if (onSuccess) {
-      onSuccess();
-    } else {
-      router.push('/dashboard');
-    }
   };
 
   return (
@@ -139,16 +113,8 @@ export function LoginForm({ onSuccess }: LoginFormProps) {
             <Button
               type="submit"
               className="w-full"
-              disabled={isLoading}
             >
-              {isLoading ? (
-                <>
-                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                  Connexion en cours...
-                </>
-              ) : (
-                'Se connecter'
-              )}
+              Se connecter avec 2FA
             </Button>
 
             {/* Séparateur avec "OU" */}
@@ -180,21 +146,13 @@ export function LoginForm({ onSuccess }: LoginFormProps) {
                   className="px-0"
                   onClick={() => router.push('/register')}
                 >
-                  S'inscrire
+                  S&apos;inscrire
                 </Button>
               </p>
             </div>
           </form>
         </CardContent>
       </Card>
-
-      {/* Dialog de changement de mot de passe obligatoire */}
-      <ChangePasswordDialog
-        isOpen={showChangePassword}
-        onClose={handleChangePasswordClose}
-        isRequired={true}
-        onSuccess={handleChangePasswordSuccess}
-      />
     </motion.div>
   );
 }

@@ -28,7 +28,7 @@ export function DateClientOnly({ dateString }: { dateString: string }) {
         }
       } else {
         // Si ce n'est pas une string, essayer de convertir
-        date = new Date(dateString as any);
+        date = new Date(dateString as string | number | Date);
       }
       
       // Vérifier si la date est valide

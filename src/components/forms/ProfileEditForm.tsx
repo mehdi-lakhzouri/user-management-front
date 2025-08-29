@@ -138,9 +138,9 @@ export function ProfileEditDialog({ isOpen, onClose, user, onUpdate }: ProfileEd
       onUpdate(updatedUser);
       toast.success('Profil mis à jour avec succès');
       onClose();
-    } catch (error: any) {
+    } catch (error: unknown) {
       console.error('Erreur mise à jour profil:', error);
-      const errorMessage = error?.response?.data?.message || error?.message || 'Erreur lors de la mise à jour du profil';
+      const errorMessage = error instanceof Error ? error.message : 'Erreur lors de la mise à jour du profil';
       setAvatarError(errorMessage);
       toast.error(errorMessage);
     } finally {
@@ -216,7 +216,7 @@ export function ProfileEditDialog({ isOpen, onClose, user, onUpdate }: ProfileEd
                       setAvatarError(undefined);
                     }}
                   >
-                    Supprimer l'avatar
+                    Supprimer l&apos;avatar
                   </Button>
                 )}
                 

@@ -10,82 +10,89 @@ import api from '@/lib/api';
 interface DiagnosticResult {
   status: 'success' | 'error' | 'warning';
   message: string;
-  details?: string;
+  details: string;
 }
 
 export function APIDiagnostic() {
   const [results, setResults] = useState<DiagnosticResult[]>([]);
-  const [isLoading, setIsLoading] = useState(false);
+  const [isRunning, setIsRunning] = useState(false);
 
-  const apiBaseUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3000/api';
-
-  const runDiagnostics = async () => {
-    setIsLoading(true);
+  const runDiagnostic = async () => {
+    setIsRunning(true);
     const newResults: DiagnosticResult[] = [];
 
-    // Test 1: Vérifier la connectivité de base sur /api
+    // Test 1: Vérifier la connectivité de base avec l'API
     try {
-      const response = await api.get('/');
+      const response = await api.get('/health');
       newResults.push({
         status: 'success',
         message: 'API Backend accessible',
         details: `Status: ${response.status}`
       });
-    } catch (error: any) {
+    } catch (error: unknown) {
       newResults.push({
         status: 'error',
         message: 'API Backend inaccessible',
-        details: error.message
+        details: error instanceof Error ? error.message : 'Erreur inconnue'
       });
     }
 
-    // Test 2: Vérifier l'endpoint API docs
+    // Test 2: Vérifier la documentation API (Swagger)
     try {
-      const response = await api.get('/../api/docs');
+      await api.get('/api-docs');
       newResults.push({
         status: 'success',
         message: 'Documentation API accessible',
         details: 'Swagger UI disponible'
       });
-    } catch (error: any) {
+    } catch (error: unknown) {
       newResults.push({
         status: 'warning',
         message: 'Documentation API non accessible',
-        details: 'Normal si Swagger n\'est pas configuré'
+        details: 'Normal si Swagger n&apos;est pas configuré'
       });
     }
 
-    // Test 3: Test d'inscription avec des données invalides (pour vérifier la validation)
+    // Test 3: Tester l'endpoint d'inscription (avec données invalides pour tester la validation)
     try {
       await api.post('/auth/register', {
         email: 'test-invalid'
       });
-    } catch (error: any) {
-      if (error.response?.status === 400) {
-        newResults.push({
-          status: 'success',
-          message: 'Endpoint d\'inscription fonctionne',
-          details: 'Validation côté serveur active'
-        });
+    } catch (error: unknown) {
+      // Vérification du type d'erreur Axios
+      if (error && typeof error === 'object' && 'response' in error) {
+        const axiosError = error as { response?: { status?: number } };
+        if (axiosError.response?.status === 400) {
+          newResults.push({
+            status: 'success',
+            message: 'Endpoint d&apos;inscription fonctionne',
+            details: 'Validation côté serveur active'
+          });
+        } else {
+          newResults.push({
+            status: 'warning',
+            message: 'Endpoint d&apos;inscription accessible mais erreur inattendue',
+            details: `Status: ${axiosError.response?.status || 'inconnu'}`
+          });
+        }
       } else {
         newResults.push({
           status: 'error',
-          message: 'Problème avec l\'endpoint d\'inscription',
-          details: `Status: ${error.response?.status}, Message: ${error.response?.data?.message || error.message}`
+          message: 'Problème avec l&apos;endpoint d&apos;inscription',
+          details: error instanceof Error ? error.message : 'Erreur inconnue'
         });
       }
     }
 
     // Test 4: Vérifier la configuration CORS avec l'API centralisée
     try {
-      // Utiliser une requête simple pour tester CORS
-      await api.options('/auth/register');
+      await api.options('/');
       newResults.push({
         status: 'success',
         message: 'CORS configuré',
         details: 'Preflight requests acceptées'
       });
-    } catch (error: any) {
+    } catch (error: unknown) {
       // Si OPTIONS n'est pas supporté, essayer avec une requête HEAD
       try {
         await api.head('/');
@@ -94,43 +101,42 @@ export function APIDiagnostic() {
           message: 'CORS configuré',
           details: 'API accessible via instance centralisée'
         });
-      } catch (headError: any) {
+      } catch (headError: unknown) {
         newResults.push({
           status: 'error',
           message: 'Problème CORS détecté',
-          details: error.message
+          details: headError instanceof Error ? headError.message : 'Erreur de connexion'
         });
       }
     }
 
     setResults(newResults);
-    setIsLoading(false);
+    setIsRunning(false);
   };
 
-  const getIcon = (status: string) => {
+  const getStatusIcon = (status: DiagnosticResult['status']) => {
     switch (status) {
       case 'success':
-        return <CheckCircle className="h-4 w-4 text-green-600" />;
+        return <CheckCircle className="h-5 w-5 text-green-500" />;
       case 'error':
-        return <XCircle className="h-4 w-4 text-red-600" />;
+        return <XCircle className="h-5 w-5 text-red-500" />;
       case 'warning':
-        return <AlertCircle className="h-4 w-4 text-yellow-600" />;
-      default:
-        return null;
+        return <AlertCircle className="h-5 w-5 text-yellow-500" />;
     }
   };
 
-  const getBadgeVariant = (status: string): "default" | "secondary" | "destructive" | "outline" => {
-    switch (status) {
-      case 'success':
-        return 'default';
-      case 'error':
-        return 'destructive';
-      case 'warning':
-        return 'secondary';
-      default:
-        return 'outline';
-    }
+  const getStatusBadge = (status: DiagnosticResult['status']) => {
+    const variants = {
+      success: 'default',
+      error: 'destructive',
+      warning: 'outline'
+    } as const;
+
+    return (
+      <Badge variant={variants[status]} className="ml-auto">
+        {status === 'success' ? 'OK' : status === 'error' ? 'ERREUR' : 'ATTENTION'}
+      </Badge>
+    );
   };
 
   return (
@@ -138,40 +144,37 @@ export function APIDiagnostic() {
       <CardHeader>
         <CardTitle>Diagnostic API Backend</CardTitle>
         <CardDescription>
-          Vérification de la connectivité avec {apiBaseUrl}
+          Vérification de la connectivité et du bon fonctionnement de l&apos;API
         </CardDescription>
       </CardHeader>
       <CardContent className="space-y-4">
-        <Button onClick={runDiagnostics} disabled={isLoading} className="w-full">
-          {isLoading ? 'Diagnostic en cours...' : 'Lancer le diagnostic'}
+        <Button 
+          onClick={runDiagnostic} 
+          disabled={isRunning}
+          className="w-full"
+        >
+          {isRunning ? 'Diagnostic en cours...' : 'Lancer le diagnostic'}
         </Button>
 
         {results.length > 0 && (
           <div className="space-y-3">
-            <h3 className="font-semibold">Résultats du diagnostic :</h3>
+            <h3 className="font-semibold">Résultats:</h3>
             {results.map((result, index) => (
-              <div key={index} className="flex items-start space-x-3 p-3 border rounded-lg">
-                {getIcon(result.status)}
-                <div className="flex-1 space-y-1">
-                  <div className="flex items-center justify-between">
+              <div key={index} className="flex items-start gap-3 p-3 rounded-lg border">
+                {getStatusIcon(result.status)}
+                <div className="flex-1">
+                  <div className="flex items-center gap-2">
                     <span className="font-medium">{result.message}</span>
-                    <Badge variant={getBadgeVariant(result.status)}>
-                      {result.status}
-                    </Badge>
+                    {getStatusBadge(result.status)}
                   </div>
-                  {result.details && (
-                    <p className="text-sm text-muted-foreground">{result.details}</p>
-                  )}
+                  <p className="text-sm text-muted-foreground mt-1">
+                    {result.details}
+                  </p>
                 </div>
               </div>
             ))}
           </div>
         )}
-
-        <div className="text-xs text-muted-foreground mt-4">
-          <p><strong>URL API configurée :</strong> {apiBaseUrl}</p>
-          <p><strong>Variables d'environnement :</strong> NEXT_PUBLIC_API_URL = {process.env.NEXT_PUBLIC_API_URL || 'non définie'}</p>
-        </div>
       </CardContent>
     </Card>
   );

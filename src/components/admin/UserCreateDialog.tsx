@@ -139,21 +139,19 @@ export function UserCreateDialog({ isOpen, onClose, onCreate }: UserCreateDialog
       setAvatarPreview('');
       setAvatarError('');
       if (previousObjectUrl.current) {
-        try { URL.revokeObjectURL(previousObjectUrl.current); } catch (e) {}
+        try { URL.revokeObjectURL(previousObjectUrl.current); } catch {
+          // Ignore revoke errors
+        }
         previousObjectUrl.current = null;
       }
       
       onCreate();
-    } catch (error: any) {
+    } catch (error: unknown) {
       console.error('Erreur lors de la création de l\'utilisateur:', error);
-      console.error('Erreur response:', error.response);
-      console.error('Erreur response data:', error.response?.data);
-      console.error('Erreur response status:', error.response?.status);
       
-      const errorMessage = error?.response?.data?.message || 
-                          error?.response?.data?.error || 
-                          error?.message || 
-                          'Erreur lors de la création de l\'utilisateur';
+      const errorMessage = error instanceof Error 
+        ? error.message
+        : 'Erreur lors de la création de l\'utilisateur';
       
       toast.error('Échec de la création', {
         description: errorMessage,
@@ -176,7 +174,9 @@ export function UserCreateDialog({ isOpen, onClose, onCreate }: UserCreateDialog
       setAvatarPreview('');
       setAvatarError('');
       if (previousObjectUrl.current) {
-        try { URL.revokeObjectURL(previousObjectUrl.current); } catch (e) {}
+        try { URL.revokeObjectURL(previousObjectUrl.current); } catch {
+          // Ignore revoke errors
+        }
         previousObjectUrl.current = null;
       }
     }
@@ -186,7 +186,9 @@ export function UserCreateDialog({ isOpen, onClose, onCreate }: UserCreateDialog
   React.useEffect(() => {
     return () => {
       if (previousObjectUrl.current) {
-        try { URL.revokeObjectURL(previousObjectUrl.current); } catch (e) {}
+        try { URL.revokeObjectURL(previousObjectUrl.current); } catch {
+          // Ignore revoke errors
+        }
         previousObjectUrl.current = null;
       }
     };
@@ -199,7 +201,7 @@ export function UserCreateDialog({ isOpen, onClose, onCreate }: UserCreateDialog
           <DialogTitle>Créer un nouvel utilisateur</DialogTitle>
         </DialogHeader>
 
-        <form onSubmit={handleSubmit(onSubmit as any)} className="space-y-4">
+        <form onSubmit={handleSubmit(onSubmit)} className="space-y-4">
           <div className="space-y-2">
             <Label htmlFor="fullname">Nom complet *</Label>
             <Input
@@ -226,7 +228,7 @@ export function UserCreateDialog({ isOpen, onClose, onCreate }: UserCreateDialog
           </div>
 
           <div className="space-y-4">
-            <Label>Avatar de l'utilisateur (optionnel)</Label>
+            <Label>Avatar de l&apos;utilisateur (optionnel)</Label>
             
             {/* Affichage de l'avatar prévisualisé */}
             {avatarPreview && (
@@ -249,7 +251,9 @@ export function UserCreateDialog({ isOpen, onClose, onCreate }: UserCreateDialog
                 onFileSelect={(file) => {
                   // Nettoyer l'ancien blob URL s'il existe
                   if (previousObjectUrl.current) {
-                    try { URL.revokeObjectURL(previousObjectUrl.current); } catch (e) {}
+                    try { URL.revokeObjectURL(previousObjectUrl.current); } catch {
+                      // Ignore revoke errors
+                    }
                   }
                   
                   setAvatarFile(file);
@@ -399,11 +403,11 @@ export function UserCreateDialog({ isOpen, onClose, onCreate }: UserCreateDialog
             <p className="text-sm text-muted-foreground">
               {useTemporaryPasswordValue ? (
                 <>
-                  <strong>Mot de passe temporaire :</strong> Un mot de passe sécurisé sera généré automatiquement et envoyé par email à l'utilisateur. L'utilisateur devra le changer lors de sa première connexion.
+                  <strong>Mot de passe temporaire :</strong> Un mot de passe sécurisé sera généré automatiquement et envoyé par email à l&apos;utilisateur. L&apos;utilisateur devra le changer lors de sa première connexion.
                 </>
               ) : (
                 <>
-                  <strong>Mot de passe fourni :</strong> L'utilisateur pourra se connecter directement avec le mot de passe que vous avez défini.
+                  <strong>Mot de passe fourni :</strong> L&apos;utilisateur pourra se connecter directement avec le mot de passe que vous avez défini.
                 </>
               )}
             </p>
@@ -420,7 +424,7 @@ export function UserCreateDialog({ isOpen, onClose, onCreate }: UserCreateDialog
             </Button>
             <Button type="submit" disabled={isLoading}>
               {isLoading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-              Créer l'utilisateur
+              Créer l&apos;utilisateur
             </Button>
           </div>
         </form>

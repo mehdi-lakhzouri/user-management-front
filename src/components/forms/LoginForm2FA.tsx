@@ -388,7 +388,7 @@ export function LoginForm2FA({ onSuccess }: LoginForm2FAProps) {
                   className="px-0"
                   onClick={() => router.push('/register')}
                 >
-                  S'inscrire
+                  S&apos;inscrire
                 </Button>
               </p>
             </div>
@@ -483,7 +483,7 @@ export function LoginForm2FA({ onSuccess }: LoginForm2FAProps) {
           {/* Informations */}
           <div className="text-center text-xs text-muted-foreground space-y-1">
             <p>⏰ Code valide pendant 4 minutes</p>
-            <p>📧 Vérifiez vos spams si vous ne recevez pas l'email</p>
+            <p>📧 Vérifiez vos spams si vous ne recevez pas l&apos;email</p>
             <p>🔄 Vous pouvez demander un nouveau code en recommençant</p>
           </div>
         </CardContent>

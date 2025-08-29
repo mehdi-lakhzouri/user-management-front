@@ -100,13 +100,12 @@ export function ChangePasswordDialog({ isOpen, onClose, isRequired = false, onSu
         }, 2000);
       }
 
-    } catch (error: any) {
+    } catch (error: unknown) {
       console.error('Erreur lors du changement de mot de passe:', error);
       
-      const errorMessage = error?.response?.data?.message || 
-                          error?.response?.data?.error || 
-                          error?.message || 
-                          'Erreur lors du changement de mot de passe';
+      const errorMessage = error instanceof Error 
+        ? error.message 
+        : 'Erreur lors du changement de mot de passe';
       
       toast.error('Échec du changement de mot de passe', {
         description: errorMessage,

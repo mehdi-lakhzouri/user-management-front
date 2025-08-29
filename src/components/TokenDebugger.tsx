@@ -25,12 +25,14 @@ export function TokenDebugger() {
       } else {
         setTestResult(`⚠️ API Call réussie mais données incomplètes: ${JSON.stringify(profile)}`);
       }
-    } catch (error: any) {
+    } catch (error: unknown) {
       console.error('🧪 Erreur test API:', error);
-      let errorMessage = error.message || 'Erreur inconnue';
+      let errorMessage = error instanceof Error ? error.message : 'Erreur inconnue';
       
-      if (error.response) {
-        errorMessage = `${error.response.status} - ${error.response.data?.message || error.message}`;
+      // Pour les erreurs de réseau ou API, on peut fournir plus de détails
+      if (error && typeof error === 'object' && 'response' in error) {
+        const axiosError = error as { response?: { status?: number; data?: { message?: string } } };
+        errorMessage = `${axiosError.response?.status || 'Erreur'} - ${axiosError.response?.data?.message || errorMessage}`;
       }
       
       setTestResult(`❌ API Call échouée: ${errorMessage}`);
@@ -84,7 +86,7 @@ export function TokenDebugger() {
       <CardContent className="space-y-4">
         <div className="grid grid-cols-2 gap-4">
           <div className="space-y-2">
-            <h4 className="font-semibold">État d'authentification</h4>
+            <h4 className="font-semibold">État d&apos;authentification</h4>
             <div className={`p-2 rounded ${isAuthenticated ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'}`}>
               {isAuthenticated ? '✅ Authentifié' : '❌ Non authentifié'}
             </div>

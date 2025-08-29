@@ -12,7 +12,7 @@ export default function DebugPage() {
           <ol className="list-decimal list-inside space-y-1">
             <li>Ouvrez la console du navigateur (F12 → Console)</li>
             <li>Connectez-vous via <a href="/login" className="underline font-medium">/login</a></li>
-            <li>Regardez les messages "🔍 DEBUG" dans la console</li>
+            <li>Regardez les messages &ldquo;🔍 DEBUG&rdquo; dans la console</li>
             <li>Revenez ici pour voir les données utilisateur actuelles</li>
           </ol>
         </div>
