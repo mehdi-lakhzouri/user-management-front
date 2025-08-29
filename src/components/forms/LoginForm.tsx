@@ -16,6 +16,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { loginSchema, type LoginFormData } from '@/lib/validations';
 import { authService } from '@/lib/api';
 import { useAuthStore } from '@/store/useAuthStore';
+import { ChangePasswordDialog } from './ChangePasswordDialog';
 
 interface LoginFormProps {
   onSuccess?: () => void;
@@ -24,6 +25,7 @@ interface LoginFormProps {
 export function LoginForm({ onSuccess }: LoginFormProps) {
   const [showPassword, setShowPassword] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
+  const [showChangePassword, setShowChangePassword] = useState(false);
   const router = useRouter();
   const setAuth = useAuthStore((state) => state.setAuth);
 
@@ -36,28 +38,37 @@ export function LoginForm({ onSuccess }: LoginFormProps) {
   });
 
   const onSubmit = async (data: LoginFormData) => {
-    setIsLoading(true);
+    // Migration vers le système 2FA obligatoire
+    // Redirection vers la page de connexion 2FA avec les données pré-remplies
+    toast.info('Redirection vers connexion sécurisée', {
+      description: 'Nous utilisons maintenant un système de connexion 2FA pour votre sécurité.',
+    });
     
-    try {
-      const response = await authService.login(data);
-      setAuth(response.user, response.accessToken, response.refreshToken);
-      
-      toast.success('Connexion réussie !', {
-        description: `Bienvenue ${response.user.fullname}`,
-      });
-      
-      if (onSuccess) {
-        onSuccess();
-      } else {
-        router.push('/dashboard');
-      }
-    } catch (error: any) {
-      const errorMessage = error.response?.data?.message || 'Erreur de connexion';
-      toast.error('Échec de la connexion', {
-        description: errorMessage,
-      });
-    } finally {
-      setIsLoading(false);
+    // Stocker temporairement l'email pour pré-remplir le formulaire 2FA
+    if (typeof window !== 'undefined') {
+      sessionStorage.setItem('prefill_email', data.email);
+    }
+    
+    router.push('/login');
+  };
+
+  const handleChangePasswordClose = () => {
+    // Si l'utilisateur ferme le dialog de changement de mot de passe obligatoire,
+    // on ne fait rien car il ne peut pas continuer sans changer le mot de passe
+    // Le dialog est configuré avec isRequired=true donc il ne peut pas être fermé
+  };
+
+  const handleChangePasswordSuccess = () => {
+    // Après changement de mot de passe obligatoire réussi,
+    // rediriger vers la destination habituelle
+    toast.success('Bienvenue !', {
+      description: 'Vous pouvez maintenant utiliser l\'application.',
+    });
+    
+    if (onSuccess) {
+      onSuccess();
+    } else {
+      router.push('/dashboard');
     }
   };
 
@@ -176,6 +187,14 @@ export function LoginForm({ onSuccess }: LoginFormProps) {
           </form>
         </CardContent>
       </Card>
+
+      {/* Dialog de changement de mot de passe obligatoire */}
+      <ChangePasswordDialog
+        isOpen={showChangePassword}
+        onClose={handleChangePasswordClose}
+        isRequired={true}
+        onSuccess={handleChangePasswordSuccess}
+      />
     </motion.div>
   );
 }

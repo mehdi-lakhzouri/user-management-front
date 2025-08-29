@@ -73,26 +73,7 @@ export const resetPasswordSchema = z.object({
   path: ['confirmPassword'],
 });
 
-// Schema pour demande OTP
-export const requestOtpSchema = z.object({
-  email: z
-    .string()
-    .min(1, 'L\'email est requis')
-    .email('Format d\'email invalide'),
-});
 
-// Schema pour vérification OTP
-export const verifyOtpSchema = z.object({
-  email: z
-    .string()
-    .min(1, 'L\'email est requis')
-    .email('Format d\'email invalide'),
-  otp: z
-    .string()
-    .min(1, 'Le code OTP est requis')
-    .length(6, 'Le code OTP doit contenir exactement 6 chiffres')
-    .regex(/^\d{6}$/, 'Le code OTP ne doit contenir que des chiffres'),
-});
 
 // Schema pour la mise à jour du profil
 export const updateProfileSchema = z.object({
@@ -114,6 +95,4 @@ export type LoginFormData = z.infer<typeof loginSchema>;
 export type RegisterFormData = z.infer<typeof registerSchema>;
 export type ForgotPasswordFormData = z.infer<typeof forgotPasswordSchema>;
 export type ResetPasswordFormData = z.infer<typeof resetPasswordSchema>;
-export type RequestOtpFormData = z.infer<typeof requestOtpSchema>;
-export type VerifyOtpFormData = z.infer<typeof verifyOtpSchema>;
 export type UpdateProfileFormData = z.infer<typeof updateProfileSchema>;

@@ -13,6 +13,7 @@ import { Switch } from '@/components/ui/switch';
 import { Avatar, AvatarImage, AvatarFallback } from '@/components/ui/avatar';
 import { AvatarDropzone } from '@/components/forms/AvatarDropzone';
 import { userService, type User } from '@/lib/api';
+import { getAvatarUrl } from '@/lib/utils-avatar';
 import { toast } from 'sonner';
 import { Loader2, User as UserIcon } from 'lucide-react';
 
@@ -41,6 +42,7 @@ export function UserEditDialog({ user, isOpen, onClose, onUpdate, userRole }: Us
   const [avatarFile, setAvatarFile] = useState<File | null>(null);
   const [avatarPreview, setAvatarPreview] = useState<string>('');
   const [avatarError, setAvatarError] = useState<string>('');
+  const previousObjectUrl = React.useRef<string | null>(null);
 
   const {
     register,
@@ -72,10 +74,16 @@ export function UserEditDialog({ user, isOpen, onClose, onUpdate, userRole }: Us
         role: user.role,
         isActive: user.isActive,
       });
-      setAvatarPreview(user.avatar || '');
+      setAvatarPreview(getAvatarUrl(user.avatar) || '');
       setAvatarFile(null);
       setAvatarError('');
     }
+    return () => {
+      if (previousObjectUrl.current) {
+        try { URL.revokeObjectURL(previousObjectUrl.current); } catch (e) {}
+        previousObjectUrl.current = null;
+      }
+    };
   }, [user, reset]);
 
   const onSubmit = async (data: UserEditFormData) => {
@@ -96,11 +104,11 @@ export function UserEditDialog({ user, isOpen, onClose, onUpdate, userRole }: Us
       // Étape 2: Si un nouvel avatar a été sélectionné, l'uploader
       if (avatarFile) {
         try {
-          const avatarResult = await userService.uploadAvatar(avatarFile);
-          console.log('Avatar uploadé:', avatarResult);
+          const avatarResult = await userService.uploadAvatarUnified(avatarFile, user.id);
+          console.log('Avatar uploadé pour l\'utilisateur:', avatarResult);
           
-          // Mettre à jour l'avatar de l'utilisateur avec la nouvelle URL
-          await userService.updateUser(user.id, { avatar: avatarResult.avatarUrl });
+          // L'avatar a été directement mis à jour côté backend, pas besoin de mettre à jour à nouveau
+          // await userService.updateUser(user.id, { avatar: avatarResult.avatarUrl });
           
           toast.success('Utilisateur et avatar mis à jour avec succès', {
             description: `Les informations de ${data.fullname} ont été mises à jour.`,
@@ -176,14 +184,14 @@ export function UserEditDialog({ user, isOpen, onClose, onUpdate, userRole }: Us
               <div className="flex flex-col items-center gap-2">
                 <Label className="text-xs text-muted-foreground">Avatar actuel</Label>
                 <Avatar className="w-16 h-16">
-                  <AvatarImage src={user.avatar} alt={user.fullname} />
+                    <AvatarImage src={getAvatarUrl(user.avatar)} alt={user.fullname} />
                   <AvatarFallback>
                     <UserIcon className="w-8 h-8" />
                   </AvatarFallback>
                 </Avatar>
               </div>
               
-              {avatarPreview && avatarPreview !== user.avatar && (
+              {avatarFile && avatarPreview && (
                 <>
                   <div className="text-muted-foreground">→</div>
                   <div className="flex flex-col items-center gap-2">
@@ -204,9 +212,15 @@ export function UserEditDialog({ user, isOpen, onClose, onUpdate, userRole }: Us
               <Label>Changer l'avatar (optionnel)</Label>
               <AvatarDropzone
                 onFileSelect={(file) => {
+                  // Nettoyer l'ancien blob URL s'il existe
+                  if (previousObjectUrl.current) {
+                    try { URL.revokeObjectURL(previousObjectUrl.current); } catch (e) {}
+                  }
+                  
                   setAvatarFile(file);
                   setAvatarError('');
                   const url = URL.createObjectURL(file);
+                  previousObjectUrl.current = url;
                   setAvatarPreview(url);
                 }}
                 previewUrl={avatarFile ? avatarPreview : undefined}

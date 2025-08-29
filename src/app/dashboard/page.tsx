@@ -18,8 +18,11 @@ import { HydrationGuard } from '@/components/HydrationGuard';
 
 import { useAuthStore, usePermissions } from '@/store/useAuthStore';
 import { authService, userService, type User as UserType } from '@/lib/api';
+import { getAvatarUrl } from '@/lib/utils-avatar';
 import { ProfileEditDialog } from '@/components/forms/ProfileEditForm';
 import { UserManagement } from '@/components/admin/UserManagement';
+import { ChangePasswordDialog } from '@/components/forms/ChangePasswordDialog';
+import { usePasswordChangeRequired } from '@/hooks/usePasswordChangeRequired';
 
 function DashboardContent() {
   const { user, clearAuth, updateUser, isAuthenticated, setUser, lastTokenRefresh } = useAuthStore();
@@ -29,6 +32,14 @@ function DashboardContent() {
   const [isEditingProfile, setIsEditingProfile] = useState(false);
   const [activeTab, setActiveTab] = useState<'profile' | 'users'>('profile');
   const router = useRouter();
+
+  // Hook pour gérer le changement de mot de passe obligatoire
+  const {
+    showChangePassword,
+    isRequired,
+    handleChangePasswordClose,
+    handleChangePasswordComplete,
+  } = usePasswordChangeRequired();
 
   // Check automatique pour restaurer l'utilisateur si token présent
   useEffect(() => {
@@ -145,12 +156,21 @@ function DashboardContent() {
                 <Avatar className="h-8 w-8 sm:h-10 sm:w-10">
                   {user.avatar && (
                     <img 
-                      src={`http://localhost:3000${user.avatar}`} 
+                      src={getAvatarUrl(user.avatar)} 
                       alt={user.fullname}
                       className="w-full h-full object-cover rounded-full"
+                      onError={(e) => {
+                        console.error('Erreur chargement avatar:', getAvatarUrl(user.avatar));
+                        e.currentTarget.style.display = 'none';
+                      }}
+                      onLoad={() => {
+                        console.log('✅ Avatar chargé avec succès:', getAvatarUrl(user.avatar));
+                      }}
                     />
                   )}
-                  <AvatarFallback className="text-xs sm:text-sm">{getInitials(user.fullname)}</AvatarFallback>
+                  <AvatarFallback className="text-xs sm:text-sm bg-gradient-to-br from-primary/20 to-primary/10">
+                    {getInitials(user.fullname)}
+                  </AvatarFallback>
                 </Avatar>
                 <div className="hidden lg:block">
                   <p className="text-sm font-medium">{user.fullname}</p>
@@ -303,9 +323,16 @@ function DashboardContent() {
                         <Avatar className="w-20 h-20 sm:w-24 sm:h-24 lg:w-28 lg:h-28 mx-auto border-4 border-background shadow-2xl ring-2 ring-primary/20">
                           {user.avatar && (
                             <img 
-                              src={`http://localhost:3000${user.avatar}`} 
+                              src={getAvatarUrl(user.avatar)} 
                               alt={user.fullname}
                               className="w-full h-full object-cover rounded-full"
+                              onError={(e) => {
+                                console.error('Erreur chargement avatar profil:', getAvatarUrl(user.avatar));
+                                e.currentTarget.style.display = 'none';
+                              }}
+                              onLoad={() => {
+                                console.log('Avatar profil chargé avec succès:', getAvatarUrl(user.avatar));
+                              }}
                             />
                           )}
                           <AvatarFallback className="text-lg sm:text-xl lg:text-2xl font-bold bg-gradient-to-br from-primary/20 to-primary/10">
@@ -383,6 +410,25 @@ function DashboardContent() {
                     <span className="font-medium">
                       <DateClientOnly dateString={user.createdAt} />
                     </span>
+                  </motion.div>
+
+                  {/* Bouton Modifier le profil */}
+                  <Separator className="bg-gradient-to-r from-transparent via-border to-transparent" />
+                  
+                  <motion.div
+                    className="flex justify-center pt-2"
+                    initial={{ opacity: 0, y: 10 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    transition={{ delay: 0.35 }}
+                  >
+                    <Button 
+                      onClick={() => setIsEditingProfile(true)}
+                      className="w-full sm:w-auto bg-gradient-to-r from-primary to-primary/90 hover:from-primary/90 hover:to-primary shadow-lg hover:shadow-xl transition-all duration-200"
+                      size="lg"
+                    >
+                      <User className="w-4 h-4 mr-2" />
+                      Modifier mon profil
+                    </Button>
                   </motion.div>
 
                   {/* Statistiques pour les admins */}
@@ -477,6 +523,13 @@ function DashboardContent() {
         onClose={() => setIsEditingProfile(false)} 
         user={user} 
         onUpdate={(updatedUser) => updateUser(updatedUser)} 
+      />
+
+      {/* Dialog de changement de mot de passe obligatoire */}
+      <ChangePasswordDialog
+        isOpen={showChangePassword}
+        onClose={handleChangePasswordClose}
+        isRequired={isRequired}
       />
     </div>
   );

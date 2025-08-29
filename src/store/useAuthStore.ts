@@ -84,7 +84,8 @@ export const useAuthStore = create<AuthStore>()(
         const currentUser = get().user;
         if (currentUser) {
           console.log('[AUTH STORE] updateUser', userData);
-          set({ user: { ...currentUser, ...userData } });
+          const updatedUser = { ...currentUser, ...userData };
+          set({ user: updatedUser });
         }
       },
       

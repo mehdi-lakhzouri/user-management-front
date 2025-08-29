@@ -10,15 +10,14 @@ import { Eye, EyeOff, Loader2 } from 'lucide-react';
 import { toast } from 'sonner';
 
 import { Button } from '@/components/ui/button';
-import { AnimatedInput } from '@/components/ui/animated-input';
-import { FormField } from '@/components/ui/form-field';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { OtpInput } from '@/components/ui/otp-input';
 
 import { registerSchema, type RegisterFormData } from '@/lib/validations';
-import { authService, userService } from '@/lib/api';
+import { authService } from '@/lib/api';
 import { useAuthStore } from '@/store/useAuthStore';
-import { useFormAnimations } from '@/hooks/useFormAnimations';
 
 interface RegisterFormProps {
   onSuccess?: () => void;
@@ -31,69 +30,51 @@ export function RegisterForm({ onSuccess }: RegisterFormProps) {
   const [avatarFile, setAvatarFile] = useState<File | null>(null);
   const [avatarPreview, setAvatarPreview] = useState<string | undefined>(undefined);
   const [avatarError, setAvatarError] = useState<string | undefined>(undefined);
-  const [submitSuccess, setSubmitSuccess] = useState(0);
+  const [registrationStep, setRegistrationStep] = useState<'form' | 'verification'>('form');
+  const [userEmail, setUserEmail] = useState<string>('');
+  const [otp, setOtp] = useState('');
+  const [otpError, setOtpError] = useState('');
   const router = useRouter();
-  const setAuth = useAuthStore((state) => state.setAuth);
 
   const {
     register,
     handleSubmit,
     formState: { errors },
-    setValue,
-    watch,
   } = useForm<RegisterFormData>({
     resolver: zodResolver(registerSchema),
   });
 
-  const { shouldShake, hasError, getErrorMessage } = useFormAnimations({ 
-    errors, 
-    resetTrigger: submitSuccess 
-  });
-
-  const selectedGender = watch('gender');
-
   const onSubmit = async (data: RegisterFormData) => {
     setIsLoading(true);
     setAvatarError(undefined);
-    
     try {
-      let avatarUrl = '';
-      
-      // Upload avatar si un fichier est sélectionné
+      // Validation côté client : avatar obligatoire ?
+      // (optionnel, sinon commenter la ligne suivante)
+      // if (!avatarFile) throw new Error("Veuillez sélectionner un avatar.");
+
+      const { confirmPassword, ...registerData } = data;
+      const formData = new FormData();
+      Object.entries(registerData).forEach(([key, value]) => {
+        formData.append(key, value as string);
+      });
       if (avatarFile) {
-        try {
-          const uploadResult = await userService.uploadAvatar(avatarFile);
-          avatarUrl = uploadResult.avatarUrl;
-        } catch (uploadError) {
-          console.error('Erreur upload avatar:', uploadError);
-          setAvatarError('Erreur lors de l\'upload de l\'avatar');
-          return;
-        }
+        formData.append('avatar', avatarFile);
       }
 
-      // Créer le compte avec l'avatar
-      const registerData = {
-        ...data,
-        avatar: avatarUrl || undefined,
-      };
-
-      const response = await authService.register(registerData);
-      setAuth(response.user, response.accessToken, response.refreshToken);
+      // Utiliser la méthode unifiée pour l'inscription
+      const result = await authService.registerUnified(formData);
+      
+      // Ne plus connecter automatiquement, mais demander vérification OTP
+      setUserEmail(data.email);
+      setRegistrationStep('verification');
       
       toast.success('Inscription réussie !', {
-        description: `Bienvenue ${response.user.fullname}`,
+        description: `Un code de vérification a été envoyé à ${data.email}`,
       });
-      
-      setSubmitSuccess(prev => prev + 1);
-      
-      if (onSuccess) {
-        onSuccess();
-      } else {
-        router.push('/dashboard');
-      }
-    } catch (error: unknown) {
-      const axiosError = error as { response?: { data?: { message?: string } } };
-      const errorMessage = axiosError.response?.data?.message || 'Erreur lors de l\'inscription';
+    } catch (error: any) {
+      let errorMessage = 'Erreur lors de l\'inscription';
+      if (error.message) errorMessage = error.message;
+      setAvatarError(errorMessage);
       toast.error('Échec de l\'inscription', {
         description: errorMessage,
       });
@@ -102,18 +83,52 @@ export function RegisterForm({ onSuccess }: RegisterFormProps) {
     }
   };
 
-  const handleFileSelect = (file: File) => {
-    setAvatarFile(file);
-    setAvatarError(undefined);
-    
-    if (file) {
-      const reader = new FileReader();
-      reader.onload = (e) => {
-        setAvatarPreview(e.target?.result as string);
-      };
-      reader.readAsDataURL(file);
-    } else {
-      setAvatarPreview(undefined);
+  const verifyOtp = async () => {
+    if (otp.length !== 6) {
+      setOtpError('Le code doit contenir 6 chiffres.');
+      return;
+    }
+
+    setIsLoading(true);
+    setOtpError('');
+
+    try {
+      await authService.verifyEmail(userEmail, otp);
+      
+      toast.success('Email vérifié avec succès !', {
+        description: 'Votre compte est maintenant activé. Vous pouvez vous connecter.',
+      });
+
+      // Rediriger vers la page de login pour la connexion sécurisée avec 2FA
+      if (onSuccess) {
+        onSuccess();
+      } else {
+        router.push('/login');
+      }
+    } catch (error: any) {
+      const errorMessage = error.response?.data?.message || 'Code de vérification incorrect';
+      setOtpError(errorMessage);
+      toast.error('Erreur de vérification', {
+        description: errorMessage,
+      });
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const resendOtp = async () => {
+    setIsLoading(true);
+    try {
+      // Note: Plus besoin de resend OTP car l'email de vérification est envoyé automatiquement
+      toast.info('Code déjà envoyé', {
+        description: 'Le code de vérification a déjà été envoyé lors de l\'inscription.',
+      });
+    } catch (error: any) {
+      toast.error('Erreur lors du renvoi', {
+        description: 'Impossible de renvoyer le code.',
+      });
+    } finally {
+      setIsLoading(false);
     }
   };
 
@@ -122,252 +137,232 @@ export function RegisterForm({ onSuccess }: RegisterFormProps) {
       initial={{ opacity: 0, y: 20 }}
       animate={{ opacity: 1, y: 0 }}
       transition={{ duration: 0.4 }}
-      className="w-full max-w-lg mx-auto px-4 sm:px-0"
+      className="w-full max-w-md mx-auto"
     >
-      <Card className="backdrop-blur-sm bg-background/95 border-border/50 shadow-lg">
-        <CardHeader className="text-center space-y-2 pb-6">
-          <motion.div
-            initial={{ scale: 0.8, opacity: 0 }}
-            animate={{ scale: 1, opacity: 1 }}
-            transition={{ delay: 0.2, duration: 0.3 }}
-          >
-            <CardTitle className="text-2xl sm:text-3xl font-bold bg-gradient-to-r from-primary to-primary/70 bg-clip-text text-transparent">
-              Inscription
-            </CardTitle>
-          </motion.div>
-          <CardDescription className="text-sm sm:text-base text-muted-foreground">
-            Créez votre compte pour commencer
+      <Card className="backdrop-blur-sm bg-background/95 border-border/50">
+        <CardHeader className="text-center">
+          <CardTitle className="text-2xl font-bold">
+            {registrationStep === 'form' ? 'Inscription' : 'Vérification Email'}
+          </CardTitle>
+          <CardDescription>
+            {registrationStep === 'form' 
+              ? 'Créez votre compte pour commencer'
+              : `Code envoyé à ${userEmail}`
+            }
           </CardDescription>
         </CardHeader>
-        
-        <CardContent className="space-y-6">
-          <form onSubmit={handleSubmit(onSubmit)} className="space-y-6">
-            {/* Avatar */}
-            <FormField
-              label="Photo de profil"
-              description="Ajoutez une photo de profil (optionnel)"
-            >
+        <CardContent>
+          {registrationStep === 'form' ? (
+            <form onSubmit={handleSubmit(onSubmit)} className="space-y-4">
+            {/* Champ d'upload d'avatar avec drag & drop, preview, micro-interaction */}
+            <div className="space-y-2">
+              <Label>Avatar</Label>
               <AvatarDropzone
-                onFileSelect={handleFileSelect}
+                onFileSelect={(file) => {
+                  setAvatarFile(file);
+                  setAvatarError(undefined);
+                  const url = URL.createObjectURL(file);
+                  setAvatarPreview(url);
+                }}
                 previewUrl={avatarPreview}
                 error={avatarError}
               />
-            </FormField>
-
-            {/* Nom complet */}
-            <FormField
-              label="Nom complet"
-              htmlFor="fullname"
-              required
-              error={hasError('fullname')}
-              errorMessage={getErrorMessage('fullname')}
-              shake={shouldShake('fullname')}
-            >
-              <AnimatedInput
+              {avatarError && (
+                <p className="text-xs text-destructive mt-1">{avatarError}</p>
+              )}
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="fullname">Nom complet</Label>
+              <Input
                 id="fullname"
                 type="text"
-                placeholder="Votre nom complet"
-                autoComplete="name"
-                error={hasError('fullname')}
-                errorMessage={getErrorMessage('fullname')}
-                shake={shouldShake('fullname')}
-                className="h-11 sm:h-12 text-base"
+                placeholder="Jean Dupont"
                 {...register('fullname')}
+                className={errors.fullname ? 'border-destructive' : ''}
               />
-            </FormField>
+              {errors.fullname && (
+                <p className="text-sm text-destructive">{errors.fullname.message}</p>
+              )}
+            </div>
 
-            {/* Email */}
-            <FormField
-              label="Email"
-              htmlFor="email"
-              required
-              error={hasError('email')}
-              errorMessage={getErrorMessage('email')}
-              shake={shouldShake('email')}
-            >
-              <AnimatedInput
-                id="email"
-                type="email"
-                placeholder="votre.email@exemple.com"
-                autoComplete="email"
-                error={hasError('email')}
-                errorMessage={getErrorMessage('email')}
-                shake={shouldShake('email')}
-                className="h-11 sm:h-12 text-base"
-                {...register('email')}
-              />
-            </FormField>
-
-            {/* Âge et Genre */}
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-              <FormField
-                label="Âge"
-                htmlFor="age"
-                required
-                error={hasError('age')}
-                errorMessage={getErrorMessage('age')}
-                shake={shouldShake('age')}
-              >
-                <AnimatedInput
+            <div className="grid grid-cols-2 gap-4">
+              <div className="space-y-2">
+                <Label htmlFor="age">Âge</Label>
+                <Input
                   id="age"
                   type="number"
                   placeholder="25"
-                  min="13"
-                  max="120"
-                  error={hasError('age')}
-                  errorMessage={getErrorMessage('age')}
-                  shake={shouldShake('age')}
-                  className="h-11 sm:h-12 text-base"
                   {...register('age', { valueAsNumber: true })}
+                  className={errors.age ? 'border-destructive' : ''}
                 />
-              </FormField>
+                {errors.age && (
+                  <p className="text-sm text-destructive">{errors.age.message}</p>
+                )}
+              </div>
 
-              <FormField
-                label="Genre"
-                htmlFor="gender"
-                required
-                error={hasError('gender')}
-                errorMessage={getErrorMessage('gender')}
-                shake={shouldShake('gender')}
-              >
-                <motion.div
-                  animate={shouldShake('gender') ? { x: [-10, 10, -10, 10, -5, 5, 0] } : { x: 0 }}
-                  transition={{ duration: 0.6, ease: "easeInOut" }}
+              <div className="space-y-2">
+                <Label htmlFor="gender">Genre</Label>
+                <select
+                  id="gender"
+                  {...register('gender')}
+                  className={`flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background file:border-0 file:bg-transparent file:text-sm file:font-medium placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50 ${
+                    errors.gender ? 'border-destructive' : ''
+                  }`}
                 >
-                  <Select
-                    value={selectedGender}
-                    onValueChange={(value) => setValue('gender', value as 'male' | 'female' | 'other')}
-                  >
-                    <SelectTrigger className={`h-11 sm:h-12 text-base ${hasError('gender') ? 'border-destructive' : ''}`}>
-                      <SelectValue placeholder="Sélectionnez votre genre" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="male">Homme</SelectItem>
-                      <SelectItem value="female">Femme</SelectItem>
-                      <SelectItem value="other">Autre</SelectItem>
-                    </SelectContent>
-                  </Select>
-                </motion.div>
-              </FormField>
+                  <option value="">Sélectionner</option>
+                  <option value="male">Homme</option>
+                  <option value="female">Femme</option>
+                  <option value="other">Autre</option>
+                </select>
+                {errors.gender && (
+                  <p className="text-sm text-destructive">{errors.gender.message}</p>
+                )}
+              </div>
             </div>
 
-            {/* Mot de passe */}
-            <FormField
-              label="Mot de passe"
-              htmlFor="password"
-              required
-              error={hasError('password')}
-              errorMessage={getErrorMessage('password')}
-              shake={shouldShake('password')}
-              description="Au moins 8 caractères avec majuscules, minuscules et chiffres"
-            >
+            <div className="space-y-2">
+              <Label htmlFor="email">Email</Label>
+              <Input
+                id="email"
+                type="email"
+                placeholder="votre.email@exemple.com"
+                {...register('email')}
+                className={errors.email ? 'border-destructive' : ''}
+              />
+              {errors.email && (
+                <p className="text-sm text-destructive">{errors.email.message}</p>
+              )}
+            </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="password">Mot de passe</Label>
               <div className="relative">
-                <AnimatedInput
+                <Input
                   id="password"
                   type={showPassword ? 'text' : 'password'}
                   placeholder="••••••••"
-                  autoComplete="new-password"
-                  error={hasError('password')}
-                  errorMessage={getErrorMessage('password')}
-                  shake={shouldShake('password')}
-                  className="h-11 sm:h-12 text-base pr-12"
                   {...register('password')}
+                  className={`pr-10 ${errors.password ? 'border-destructive' : ''}`}
                 />
-                <motion.button
+                <button
                   type="button"
                   onClick={() => setShowPassword(!showPassword)}
-                  className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground transition-colors p-1"
-                  whileHover={{ scale: 1.1 }}
-                  whileTap={{ scale: 0.9 }}
-                  tabIndex={-1}
+                  className="absolute inset-y-0 right-0 pr-3 flex items-center text-muted-foreground hover:text-foreground"
                 >
-                  {showPassword ? (
-                    <EyeOff className="h-4 w-4 sm:h-5 sm:w-5" />
-                  ) : (
-                    <Eye className="h-4 w-4 sm:h-5 sm:w-5" />
-                  )}
-                </motion.button>
+                  {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                </button>
               </div>
-            </FormField>
+              {errors.password && (
+                <p className="text-sm text-destructive">{errors.password.message}</p>
+              )}
+            </div>
 
-            {/* Confirmation mot de passe */}
-            <FormField
-              label="Confirmer le mot de passe"
-              htmlFor="confirmPassword"
-              required
-              error={hasError('confirmPassword')}
-              errorMessage={getErrorMessage('confirmPassword')}
-              shake={shouldShake('confirmPassword')}
-            >
+            <div className="space-y-2">
+              <Label htmlFor="confirmPassword">Confirmer le mot de passe</Label>
               <div className="relative">
-                <AnimatedInput
+                <Input
                   id="confirmPassword"
                   type={showConfirmPassword ? 'text' : 'password'}
                   placeholder="••••••••"
-                  autoComplete="new-password"
-                  error={hasError('confirmPassword')}
-                  errorMessage={getErrorMessage('confirmPassword')}
-                  shake={shouldShake('confirmPassword')}
-                  className="h-11 sm:h-12 text-base pr-12"
                   {...register('confirmPassword')}
+                  className={`pr-10 ${errors.confirmPassword ? 'border-destructive' : ''}`}
                 />
-                <motion.button
+                <button
                   type="button"
                   onClick={() => setShowConfirmPassword(!showConfirmPassword)}
-                  className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground transition-colors p-1"
-                  whileHover={{ scale: 1.1 }}
-                  whileTap={{ scale: 0.9 }}
-                  tabIndex={-1}
+                  className="absolute inset-y-0 right-0 pr-3 flex items-center text-muted-foreground hover:text-foreground"
                 >
-                  {showConfirmPassword ? (
-                    <EyeOff className="h-4 w-4 sm:h-5 sm:w-5" />
-                  ) : (
-                    <Eye className="h-4 w-4 sm:h-5 sm:w-5" />
-                  )}
-                </motion.button>
+                  {showConfirmPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                </button>
               </div>
-            </FormField>
+              {errors.confirmPassword && (
+                <p className="text-sm text-destructive">{errors.confirmPassword.message}</p>
+              )}
+            </div>
 
-            {/* Bouton d'inscription */}
-            <motion.div
-              whileHover={{ scale: 1.02 }}
-              whileTap={{ scale: 0.98 }}
-              className="pt-4"
+            <Button
+              type="submit"
+              className="w-full"
+              disabled={isLoading}
             >
-              <Button
-                type="submit"
-                className="w-full h-11 sm:h-12 text-base font-semibold"
-                disabled={isLoading}
-              >
-                {isLoading ? (
-                  <motion.div
-                    className="flex items-center"
-                    initial={{ opacity: 0 }}
-                    animate={{ opacity: 1 }}
-                  >
-                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                    Inscription en cours...
-                  </motion.div>
-                ) : (
-                  'S\'inscrire'
-                )}
-              </Button>
-            </motion.div>
+              {isLoading ? (
+                <>
+                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                  Inscription en cours...
+                </>
+              ) : (
+                'S\'inscrire'
+              )}
+            </Button>
 
-            {/* Lien vers connexion */}
-            <div className="text-center text-sm">
-              <span className="text-muted-foreground">Déjà un compte ? </span>
-              <motion.button
-                type="button"
-                onClick={() => router.push('/login')}
-                className="text-primary hover:underline font-medium"
-                whileHover={{ scale: 1.05 }}
-                whileTap={{ scale: 0.95 }}
-              >
-                Se connecter
-              </motion.button>
+            <div className="text-center">
+              <p className="text-sm text-muted-foreground">
+                Déjà un compte ?{' '}
+                <Button
+                  type="button"
+                  variant="link"
+                  className="px-0"
+                  onClick={() => router.push('/login')}
+                >
+                  Se connecter
+                </Button>
+              </p>
             </div>
           </form>
+          ) : (
+            // Étape de vérification OTP
+            <div className="space-y-4">
+              <div className="space-y-2">
+                <Label htmlFor="otp">Code de vérification</Label>
+                <OtpInput
+                  value={otp}
+                  onChange={setOtp}
+                  length={6}
+                  onComplete={(value) => setOtp(value)}
+                />
+                {otpError && (
+                  <p className="text-sm text-destructive">{otpError}</p>
+                )}
+              </div>
+
+              <Button
+                type="button"
+                onClick={verifyOtp}
+                disabled={isLoading || otp.length !== 6}
+                className="w-full"
+              >
+                {isLoading ? (
+                  <>
+                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                    Vérification...
+                  </>
+                ) : (
+                  'Vérifier le code'
+                )}
+              </Button>
+
+              <div className="text-center">
+                <Button
+                  type="button"
+                  variant="link"
+                  onClick={resendOtp}
+                  disabled={isLoading}
+                >
+                  Renvoyer le code
+                </Button>
+              </div>
+
+              <div className="text-center">
+                <Button
+                  type="button"
+                  variant="link"
+                  onClick={() => setRegistrationStep('form')}
+                >
+                  Retour au formulaire
+                </Button>
+              </div>
+            </div>
+          )}
         </CardContent>
       </Card>
     </motion.div>

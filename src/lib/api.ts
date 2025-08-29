@@ -202,6 +202,7 @@ export interface RegisterData {
 
 export interface User {
   id: string;
+  _id?: string; // Pour la compatibilité avec le backend MongoDB
   fullname: string;
   age: number;
   gender: 'male' | 'female' | 'other';
@@ -209,14 +210,47 @@ export interface User {
   role: 'USER' | 'MODERATOR' | 'ADMIN';
   isActive: boolean;
   avatar?: string;
+  mustChangePassword?: boolean; // Nouveau champ pour indiquer si l'utilisateur doit changer son mot de passe
   createdAt: string;
   updatedAt: string;
+}
+
+export interface CreateUserData {
+  fullname: string;
+  email: string;
+  age: number;
+  gender: 'male' | 'female' | 'other';
+  role: 'USER' | 'MODERATOR' | 'ADMIN';
+  isActive: boolean;
+  password?: string; // Optionnel car peut être généré automatiquement
+}
+
+// Nouveau type pour la réponse de création d'utilisateur
+export interface CreateUserResponse {
+  message: string;
+  user: User;
+  temporaryPassword?: string; // Présent seulement si un mot de passe temporaire a été généré
+  emailSent?: boolean; // Indique si l'email a été envoyé avec succès
+}
+
+// Type pour le changement de mot de passe
+export interface ChangePasswordData {
+  currentPassword: string;
+  newPassword: string;
+  confirmPassword: string;
+}
+
+// Type pour la réponse du changement de mot de passe
+export interface ChangePasswordResponse {
+  message: string;
+  requiresRelogin: boolean;
 }
 
 export interface AuthResponse {
   user: User;
   accessToken: string;
   refreshToken: string;
+  requiresPasswordChange?: boolean; // Nouveau champ pour indiquer si l'utilisateur doit changer son mot de passe
 }
 
 // Nouveaux types pour le système 2FA
@@ -250,14 +284,27 @@ export interface PaginatedUsersResponse {
 
 // Services API
 export const authService = {
-  async registerWithAvatar(data: FormData): Promise<AuthResponse> {
+  // Méthode unifiée pour l'inscription (avec ou sans avatar)
+  async registerUnified(data: RegisterData | FormData): Promise<AuthResponse> {
     try {
-      const response = await api.post<ApiResponse<AuthResponse>>('/auth/register-with-avatar', data, {
-        headers: {
-          'Content-Type': 'multipart/form-data',
-        },
-      });
-      console.log('Register with avatar response:', response.data);
+      let endpoint = '/auth/register';
+      let config = {};
+      
+      // Déterminer si c'est FormData (avec avatar) ou JSON (sans avatar)
+      if (data instanceof FormData) {
+        endpoint = '/auth/register-with-avatar';
+        config = {
+          headers: {
+            'Content-Type': 'multipart/form-data',
+          },
+        };
+        console.log('Register unified: utilisation endpoint avec avatar');
+      } else {
+        console.log('Register unified: utilisation endpoint standard');
+      }
+      
+      const response = await api.post<ApiResponse<AuthResponse>>(endpoint, data, config);
+      console.log('Register unified response:', response.data);
       
       if (response.data.data) {
         return response.data.data;
@@ -265,7 +312,7 @@ export const authService = {
         return response.data as unknown as AuthResponse;
       }
     } catch (error: any) {
-      console.error('Erreur dans registerWithAvatar:', error);
+      console.error('Erreur dans registerUnified:', error);
       if (error.response) {
         console.error('Statut:', error.response.status);
         console.error('Data:', error.response.data);
@@ -274,22 +321,7 @@ export const authService = {
     }
   },
 
-  async login(credentials: LoginCredentials): Promise<AuthResponse> {
-    try {
-      const response = await api.post<ApiResponse<AuthResponse>>('/auth/login', credentials);
-      console.log('Login response:', response.data);
-      
-      // Vérifier si la réponse a une structure { data: ... } ou directement les données
-      if (response.data.data) {
-        return response.data.data;
-      } else {
-        return response.data as unknown as AuthResponse;
-      }
-    } catch (error) {
-      console.error('Erreur login:', error);
-      throw error;
-    }
-  },
+
 
   // Nouvelle méthode pour le système 2FA - Étape 1: Validation des identifiants
   async validateCredentials(credentials: LoginCredentials): Promise<CredentialsValidationResponse> {
@@ -374,34 +406,6 @@ export const authService = {
     return this.getSessionData() !== null;
   },
 
-  async register(data: RegisterData): Promise<AuthResponse> {
-    console.log('Service register appelé avec:', data);
-    console.log('URL de base:', api.defaults.baseURL);
-    
-    try {
-      const response = await api.post<ApiResponse<AuthResponse>>('/auth/register', data);
-      console.log('Réponse complète du serveur:', response);
-      console.log('Réponse data du serveur:', response.data);
-      
-      // Vérifier si la réponse a une structure { data: ... } ou directement les données
-      if (response.data.data) {
-        console.log('Structure avec data wrapper:', response.data.data);
-        return response.data.data;
-      } else {
-        console.log('Structure directe:', response.data);
-        return response.data as unknown as AuthResponse;
-      }
-    } catch (error: any) {
-      console.error('Erreur dans authService.register:', error);
-      console.error('URL complète:', `${api.defaults.baseURL}/auth/register`);
-      if (error.response) {
-        console.error('Statut:', error.response.status);
-        console.error('Data:', error.response.data);
-      }
-      throw error;
-    }
-  },
-
   async logout(): Promise<void> {
     try {
       const { refreshToken } = useAuthStore.getState();
@@ -419,24 +423,26 @@ export const authService = {
     }
   },
 
-  async logoutAll(): Promise<void> {
+  // Nouvelle méthode pour le changement de mot de passe
+  async changePassword(data: ChangePasswordData): Promise<ChangePasswordResponse> {
     try {
-      const { refreshToken } = useAuthStore.getState();
-      if (refreshToken) {
-        await api.post('/auth/logout-all', { refreshToken });
+      const response = await api.post<ApiResponse<ChangePasswordResponse>>('/auth/change-password', data);
+      console.log('Change password response:', response.data);
+      
+      if (response.data.data) {
+        return response.data.data;
+      } else {
+        return response.data as unknown as ChangePasswordResponse;
       }
     } catch (error: any) {
-      console.error('Erreur lors du logout-all:', error);
+      console.error('Erreur changement mot de passe:', error);
+      throw error;
     }
   },
 
-  async refreshToken(refreshToken: string): Promise<{ accessToken: string; refreshToken: string }> {
-    const response = await api.post<ApiResponse<{ accessToken: string; refreshToken: string }>>(
-      '/auth/refresh',
-      { refreshToken }
-    );
-    return response.data.data;
-  },
+
+
+
 
   async forgotPassword(email: string): Promise<{ message: string }> {
     try {
@@ -444,6 +450,18 @@ export const authService = {
       return response.data;
     } catch (error) {
       console.error('Forgot password error:', error);
+      throw error;
+    }
+  },
+
+
+
+  async verifyEmail(email: string, otp: string): Promise<{ message: string; success: boolean }> {
+    try {
+      const response = await api.post('/auth/verify-email', { email, otp });
+      return response.data;
+    } catch (error) {
+      console.error('Verify email error:', error);
       throw error;
     }
   },
@@ -461,32 +479,7 @@ export const authService = {
     }
   },
 
-  async requestOtp(email: string): Promise<{ message: string }> {
-    try {
-      const response = await api.post('/auth/request-otp', { email });
-      console.log('Request OTP response:', response.data);
-      return response.data.data || response.data;
-    } catch (error: any) {
-      console.error('Request OTP error:', error);
-      throw error;
-    }
-  },
 
-  async verifyOtp(email: string, otp: string): Promise<AuthResponse> {
-    try {
-      const response = await api.post<ApiResponse<AuthResponse>>('/auth/verify-otp', { email, otp });
-      console.log('Verify OTP response:', response.data);
-      
-      if (response.data.data) {
-        return response.data.data;
-      } else {
-        return response.data as unknown as AuthResponse;
-      }
-    } catch (error: any) {
-      console.error('Verify OTP error:', error);
-      throw error;
-    }
-  },
 };
 
 export const userService = {
@@ -524,6 +517,41 @@ export const userService = {
   async updateProfile(data: Partial<User>): Promise<User> {
     const response = await api.patch<ApiResponse<User>>('/users/profile', data);
     return response.data.data;
+  },
+
+  async updateProfileWithFormData(formData: FormData): Promise<User> {
+    try {
+      const response = await api.patch<ApiResponse<User>>('/users/profile', formData, {
+        headers: {
+          'Content-Type': 'multipart/form-data',
+        },
+      });
+      console.log('Update profile with FormData response:', response.data);
+      
+      // Transformer _id en id pour correspondre à l'interface frontend
+      const userData = response.data.data;
+      const user: User = {
+        id: userData._id || userData.id,
+        fullname: userData.fullname,
+        age: userData.age,
+        gender: userData.gender,
+        email: userData.email,
+        role: userData.role,
+        isActive: userData.isActive,
+        avatar: userData.avatar,
+        mustChangePassword: userData.mustChangePassword,
+        createdAt: userData.createdAt,
+        updatedAt: userData.updatedAt,
+      };
+      
+      return user;
+    } catch (error: any) {
+      console.error('Erreur dans updateProfileWithFormData:', error);
+      if (error.response) {
+        console.error('Response data:', error.response.data);
+      }
+      throw error;
+    }
   },
 
   async getAllUsers(params: PaginationParams = {}): Promise<PaginatedUsersResponse> {
@@ -582,9 +610,45 @@ export const userService = {
     }
   },
 
-  async createUser(data: Omit<User, 'id' | 'createdAt' | 'updatedAt'>): Promise<User> {
-    const response = await api.post<ApiResponse<User>>('/users', data);
-    return response.data.data;
+  async createUser(data: CreateUserData): Promise<CreateUserResponse> {
+    try {
+      console.log('Création utilisateur avec data:', data);
+      const response = await api.post<ApiResponse<CreateUserResponse>>('/users', data);
+      console.log('Réponse création utilisateur:', response.data);
+      
+      // Retourner la réponse complète qui contient message, user, temporaryPassword, etc.
+      if (response.data.data) {
+        return response.data.data;
+      } else {
+        // Fallback pour l'ancien format si nécessaire - type any pour éviter les erreurs
+        const userData = response.data as any;
+        return {
+          message: userData.message || 'Utilisateur créé avec succès',
+          user: {
+            id: userData._id || userData.id,
+            fullname: userData.fullname,
+            age: userData.age,
+            gender: userData.gender,
+            email: userData.email,
+            role: userData.role,
+            isActive: userData.isActive,
+            avatar: userData.avatar,
+            mustChangePassword: userData.mustChangePassword,
+            createdAt: userData.createdAt,
+            updatedAt: userData.updatedAt,
+          },
+          temporaryPassword: userData.temporaryPassword,
+          emailSent: userData.emailSent,
+        };
+      }
+    } catch (error: any) {
+      console.error('Erreur dans createUser:', error);
+      if (error.response) {
+        console.error('Response status:', error.response.status);
+        console.error('Response data:', error.response.data);
+      }
+      throw error;
+    }
   },
 
   async updateUser(userId: string, data: Partial<User>): Promise<User> {
@@ -596,11 +660,15 @@ export const userService = {
     await api.delete(`/users/${userId}`);
   },
 
-  async uploadAvatar(file: File): Promise<{ avatarUrl: string; message: string }> {
+  // API unifiée pour upload d'avatar
+  async uploadAvatarUnified(file: File, userId?: string): Promise<{ avatarUrl: string; message: string }> {
     const formData = new FormData();
     formData.append('avatar', file);
     
-    const response = await api.post<ApiResponse<{ avatarUrl: string; message: string }>>('/users/avatar', formData, {
+    // Si userId est fourni, utiliser l'endpoint spécifique, sinon l'endpoint général
+    const endpoint = userId ? `/users/${userId}/avatar` : '/users/avatar';
+    
+    const response = await api.post<ApiResponse<{ avatarUrl: string; message: string }>>(endpoint, formData, {
       headers: {
         'Content-Type': 'multipart/form-data',
       },

@@ -14,9 +14,10 @@ import { Label } from '@/components/ui/label';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { OtpInput } from '@/components/ui/otp-input';
 
-import { loginSchema, verifyOtpSchema, type LoginFormData, type VerifyOtpFormData } from '@/lib/validations';
+import { loginSchema, type LoginFormData } from '@/lib/validations';
 import { authService } from '@/lib/api';
 import { useAuthStore } from '@/store/useAuthStore';
+import { ChangePasswordDialog } from './ChangePasswordDialog';
 
 type Step = 'credentials' | 'otp' | 'success';
 
@@ -32,6 +33,7 @@ export function LoginForm2FA({ onSuccess }: LoginForm2FAProps) {
   const [isLoading, setIsLoading] = useState(false);
   const [otpError, setOtpError] = useState('');
   const [timeLeft, setTimeLeft] = useState(240); // 4 minutes en secondes pour OTP
+  const [showChangePassword, setShowChangePassword] = useState(false);
   
   const router = useRouter();
   const setAuth = useAuthStore((state) => state.setAuth);
@@ -212,6 +214,20 @@ export function LoginForm2FA({ onSuccess }: LoginForm2FAProps) {
       // Stocker les informations d'authentification
       setAuth(response.user, response.accessToken, response.refreshToken);
       
+      // Vérifier si l'utilisateur doit changer son mot de passe
+      if (response.requiresPasswordChange || response.user.mustChangePassword) {
+        setStep('success');
+        toast.success('Connexion réussie !', {
+          description: `Bienvenue ${response.user.fullname}. Vous devez changer votre mot de passe temporaire.`,
+        });
+        
+        // Attendre un peu puis afficher le dialog de changement de mot de passe
+        setTimeout(() => {
+          setShowChangePassword(true);
+        }, 2000);
+        return;
+      }
+      
       setStep('success');
       toast.success('Connexion réussie !', {
         description: `Bienvenue ${response.user.fullname}`,
@@ -267,6 +283,17 @@ export function LoginForm2FA({ onSuccess }: LoginForm2FAProps) {
     setOtp('');
     setOtpError('');
     setTimeLeft(240); // Reset timer to 4 minutes
+  };
+
+  const handleChangePasswordSuccess = () => {
+    setShowChangePassword(false);
+    
+    // Redirection vers la page d'origine ou dashboard sans déconnecter l'utilisateur
+    if (onSuccess) {
+      onSuccess();
+    } else {
+      router.push('/dashboard');
+    }
   };
 
   const formatTime = (seconds: number) => {
@@ -534,6 +561,13 @@ export function LoginForm2FA({ onSuccess }: LoginForm2FAProps) {
         {step === 'otp' && renderOtpStep()}
         {step === 'success' && renderSuccessStep()}
       </AnimatePresence>
+
+      <ChangePasswordDialog
+        isOpen={showChangePassword}
+        onClose={() => setShowChangePassword(false)}
+        onSuccess={handleChangePasswordSuccess}
+        isRequired={true}
+      />
     </div>
   );
 }

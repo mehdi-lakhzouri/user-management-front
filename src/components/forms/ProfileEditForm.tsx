@@ -14,7 +14,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { userService } from '@/lib/api';
 import { toast } from 'sonner';
 import { Loader2 } from 'lucide-react';
-import { useAuthStore } from '@/store/useAuthStore';
+import { getAvatarUrl } from '@/lib/utils-avatar';
 
 // Schema de validation pour le profil
 const profileSchema = z.object({
@@ -53,7 +53,6 @@ export function ProfileEditDialog({ isOpen, onClose, user, onUpdate }: ProfileEd
   const [avatarPreview, setAvatarPreview] = useState<string | undefined>(user?.avatar);
   const [avatarError, setAvatarError] = useState<string | undefined>(undefined);
   const [avatarDeleted, setAvatarDeleted] = useState(false);
-  const { accessToken } = useAuthStore();
 
   const {
     register,
@@ -132,25 +131,8 @@ export function ProfileEditDialog({ isOpen, onClose, user, onUpdate }: ProfileEd
           hasAvatar: !!avatarFile
         });
         
-        // Utiliser fetch avec multipart/form-data
-        const response = await fetch('http://localhost:3000/api/users/profile', {
-          method: 'PATCH',
-          headers: {
-            'Authorization': `Bearer ${accessToken || ''}`,
-            // NE PAS ajouter Content-Type, le navigateur le gère automatiquement pour FormData
-          },
-          body: formData,
-        });
-        
-        if (!response.ok) {
-          const errorText = await response.text();
-          console.error('Erreur API:', errorText);
-          throw new Error(errorText || 'Erreur lors de la mise à jour');
-        }
-        
-        const responseData = await response.json();
-        console.log('Réponse API:', responseData);
-        updatedUser = responseData.data || responseData;
+        // Utiliser le service API centralisé
+        updatedUser = await userService.updateProfileWithFormData(formData);
       }
       
       onUpdate(updatedUser);
@@ -209,10 +191,7 @@ export function ProfileEditDialog({ isOpen, onClose, user, onUpdate }: ProfileEd
                 <Avatar className="w-24 h-24 border-4 border-muted">
                   {(avatarPreview && !avatarDeleted) && (
                     <img 
-                      src={avatarPreview.startsWith('blob:') 
-                        ? avatarPreview 
-                        : `http://localhost:3000${avatarPreview}`
-                      } 
+                      src={getAvatarUrl(avatarPreview)} 
                       alt="Avatar prévisualisation"
                       className="w-full h-full object-cover rounded-full"
                     />

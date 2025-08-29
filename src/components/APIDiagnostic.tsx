@@ -5,7 +5,7 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { CheckCircle, XCircle, AlertCircle } from 'lucide-react';
-import axios from 'axios';
+import api from '@/lib/api';
 
 interface DiagnosticResult {
   status: 'success' | 'error' | 'warning';
@@ -25,7 +25,7 @@ export function APIDiagnostic() {
 
     // Test 1: Vérifier la connectivité de base sur /api
     try {
-      const response = await axios.get(`${apiBaseUrl}`);
+      const response = await api.get('/');
       newResults.push({
         status: 'success',
         message: 'API Backend accessible',
@@ -41,7 +41,7 @@ export function APIDiagnostic() {
 
     // Test 2: Vérifier l'endpoint API docs
     try {
-      const response = await axios.get(`${apiBaseUrl.replace('/api', '')}/api/docs`);
+      const response = await api.get('/../api/docs');
       newResults.push({
         status: 'success',
         message: 'Documentation API accessible',
@@ -57,7 +57,7 @@ export function APIDiagnostic() {
 
     // Test 3: Test d'inscription avec des données invalides (pour vérifier la validation)
     try {
-      await axios.post(`${apiBaseUrl}/auth/register`, {
+      await api.post('/auth/register', {
         email: 'test-invalid'
       });
     } catch (error: any) {
@@ -76,22 +76,31 @@ export function APIDiagnostic() {
       }
     }
 
-    // Test 4: Vérifier la configuration CORS
+    // Test 4: Vérifier la configuration CORS avec l'API centralisée
     try {
-      const response = await fetch(`${apiBaseUrl}/auth/register`, {
-        method: 'OPTIONS'
-      });
+      // Utiliser une requête simple pour tester CORS
+      await api.options('/auth/register');
       newResults.push({
         status: 'success',
         message: 'CORS configuré',
         details: 'Preflight requests acceptées'
       });
     } catch (error: any) {
-      newResults.push({
-        status: 'error',
-        message: 'Problème CORS détecté',
-        details: error.message
-      });
+      // Si OPTIONS n'est pas supporté, essayer avec une requête HEAD
+      try {
+        await api.head('/');
+        newResults.push({
+          status: 'success',
+          message: 'CORS configuré',
+          details: 'API accessible via instance centralisée'
+        });
+      } catch (headError: any) {
+        newResults.push({
+          status: 'error',
+          message: 'Problème CORS détecté',
+          details: error.message
+        });
+      }
     }
 
     setResults(newResults);

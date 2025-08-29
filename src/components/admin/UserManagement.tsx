@@ -4,6 +4,7 @@ import React, { useState, useEffect, useCallback } from 'react';
 import { motion } from 'framer-motion';
 import { useAuthStore } from '@/store/useAuthStore';
 import { userService, type User, type PaginationParams, type PaginatedUsersResponse } from '@/lib/api';
+import { getAvatarUrl } from '@/lib/utils-avatar';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -38,7 +39,7 @@ interface UserManagementProps {
 }
 
 export function UserManagement({ userRole }: UserManagementProps) {
-  const { user: currentUser, lastTokenRefresh } = useAuthStore();
+  const { user: currentUser, lastTokenRefresh, updateUser: updateCurrentUser } = useAuthStore();
   
   // Pagination state
   const [paginatedData, setPaginatedData] = useState<PaginatedUsersResponse>({
@@ -336,7 +337,14 @@ export function UserManagement({ userRole }: UserManagementProps) {
                 <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between space-y-4 sm:space-y-0">
                   <div className="flex items-center space-x-3 sm:space-x-4">
                     <Avatar className="h-10 w-10 sm:h-12 sm:w-12 flex-shrink-0">
-                      <AvatarImage src={user.avatar} alt={user.fullname} />
+                      <AvatarImage 
+                        src={getAvatarUrl(user.avatar)} 
+                        alt={user.fullname}
+                        onError={(e) => {
+                          console.error('Erreur chargement avatar utilisateur:', getAvatarUrl(user.avatar));
+                          e.currentTarget.style.display = 'none';
+                        }}
+                      />
                       <AvatarFallback className="text-xs sm:text-sm">
                         {user.fullname.split(' ').map((n: string) => n[0]).join('').toUpperCase()}
                       </AvatarFallback>
@@ -433,7 +441,24 @@ export function UserManagement({ userRole }: UserManagementProps) {
             setSelectedUser(null);
           }}
           onUpdate={() => {
+            // Recharger la liste des utilisateurs
             loadUsers({});
+            
+            // Si l'utilisateur modifié est l'utilisateur actuellement connecté, 
+            // mettre à jour le store d'authentification
+            if (currentUser && selectedUser && selectedUser.id === currentUser.id) {
+              console.log('[UserManagement] Mise à jour de l\'utilisateur connecté détectée');
+              // Récupérer les données mises à jour de l'utilisateur depuis l'API
+              userService.getProfile()
+                .then((updatedUser: User) => {
+                  console.log('[UserManagement] Données utilisateur mises à jour:', updatedUser);
+                  updateCurrentUser(updatedUser);
+                })
+                .catch((error: any) => {
+                  console.error('[UserManagement] Erreur lors de la récupération du profil mis à jour:', error);
+                });
+            }
+            
             setShowEditDialog(false);
             setSelectedUser(null);
           }}
